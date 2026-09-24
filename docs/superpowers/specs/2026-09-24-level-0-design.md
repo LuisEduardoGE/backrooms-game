@@ -19,7 +19,7 @@ The player wakes in **Level 0** of the Backrooms — endless mono-yellow rooms, 
 ## 3. Platform & tech
 
 - **Platform:** desktop browsers only (keyboard + mouse, Pointer Lock). Touch/mobile devices get a "play on desktop" screen with a trailer GIF.
-- **Stack:** TypeScript, Vite, Three.js, `postprocessing` (pmndrs) + custom VHS shader, Web Audio API, Vitest.
+- **Stack:** TypeScript, Vite, Three.js, Three.js `EffectComposer` add-ons (RenderPass → OutputPass → one custom VHS ShaderPass), Web Audio API, Vitest.
 - **Style:** realistic VHS — soft fluorescent lighting, fog, VHS post-processing on top. Milestone 1 uses procedurally generated canvas textures (wallpaper, carpet, ceiling tiles); CC0 PBR textures (ambientCG / Poly Haven) may replace them in the polish milestone. All asset sources + licenses recorded in `public/CREDITS.md`.
 - **Hosting:** static site (Vercel or GitHub Pages). Validate locally first.
 

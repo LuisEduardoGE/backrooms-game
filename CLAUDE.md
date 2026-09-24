@@ -16,7 +16,7 @@ Update the spec when a design decision changes.
 ## Tech stack
 
 - **TypeScript + Vite + Three.js** (plain, no React for the game)
-- **`postprocessing`** (pmndrs) + custom shader for the VHS effect chain
+- Three.js **`EffectComposer`** add-ons + one custom VHS `ShaderPass` (no extra dependency)
 - **Web Audio API** for ambience and positional audio
 - **Vitest** for pure-logic unit tests
 - HTML/CSS overlays for HUD and menus

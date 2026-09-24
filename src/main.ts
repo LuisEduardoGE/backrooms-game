@@ -3,7 +3,10 @@ import * as THREE from 'three';
 import { createInput } from './core/input';
 import { createFixedStepper, FIXED_DT } from './core/loop';
 import { createRng, deriveSeed } from './core/rng';
+import { createVhsComposer } from './fx/composer';
+import { glitchAmount } from './fx/glitch';
 import { createLightPool } from './lighting/lightPool';
+import { createCamcorder, toggleNightVision, updateCamcorder } from './player/camcorder';
 import { applyLook, createPlayer, NO_INPUT, updatePlayer } from './player/controller';
 import { createDebugHud } from './ui/debugHud';
 import { parseParams } from './ui/params';
@@ -13,6 +16,8 @@ import { createChunkStreamer } from './world/streamer';
 import { createWorldMaterials } from './world/textures';
 
 const FOG_COLOR = 0x3b3318;
+/** Peak intensity of the camcorder's infrared illuminator in night vision. */
+const IR_INTENSITY = 6;
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
 const overlay = document.getElementById('overlay') as HTMLDivElement;
@@ -28,6 +33,9 @@ scene.add(new THREE.HemisphereLight(0xfff2c4, 0x4a3f1c, 0.3));
 
 const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.05, 120);
 camera.rotation.order = 'YXZ';
+// The camcorder's infrared illuminator: always in the scene (stable light count), lit only in night vision.
+const irLight = new THREE.PointLight(0xffffff, 0, 14, 1.5);
+scene.add(irLight);
 
 const params = parseParams(window.location.search);
 const seed = params.seed ?? Math.floor(Math.random() * 0xffffffff) >>> 0;
@@ -38,6 +46,10 @@ const lightPool = createLightPool(scene, level.grid, deriveSeed(seed, 'lights'))
 const player = createPlayer({ x: cellToWorld(level.start.x), z: cellToWorld(level.start.y) }, level.startYaw);
 const debugHud = params.debug ? createDebugHud(level) : null;
 if (params.debug) console.info(`[backrooms] seed ${seed} — reload with ?debug&seed=${seed} to replay`);
+
+const camcorder = createCamcorder();
+const glitchSeed = deriveSeed(seed, 'glitch');
+const vhs = createVhsComposer(renderer, scene, camera, window.innerWidth, window.innerHeight);
 
 const isLocked = () => document.pointerLockElement === canvas;
 const input = createInput(window, isLocked);
@@ -51,6 +63,7 @@ window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
+  vhs.setSize(window.innerWidth, window.innerHeight);
 });
 
 const stepper = createFixedStepper();
@@ -62,10 +75,14 @@ renderer.setAnimationLoop((now: number) => {
 
   // Look is applied every rendered frame; movement runs in fixed steps and is interpolated below.
   const frameInput = isLocked() ? input.moveInput() : NO_INPUT;
+  if (isLocked() && input.consumePressed('KeyN')) toggleNightVision(camcorder);
   applyLook(player, frameInput.lookDX, frameInput.lookDY);
   const stepInput = { ...frameInput, lookDX: 0, lookDY: 0 };
   const steps = stepper.advance(frameDt);
-  for (let i = 0; i < steps; i++) updatePlayer(player, stepInput, FIXED_DT, level.grid);
+  for (let i = 0; i < steps; i++) {
+    updatePlayer(player, stepInput, FIXED_DT, level.grid);
+    if (isLocked()) updateCamcorder(camcorder, FIXED_DT);
+  }
 
   const a = stepper.alpha();
   camera.position.set(
@@ -79,5 +96,13 @@ renderer.setAnimationLoop((now: number) => {
   streamer.update(cellX, cellY);
   lightPool.update(camera.position.x, camera.position.z, now / 1000);
   debugHud?.update(frameDt, player);
-  renderer.render(scene, camera);
+  irLight.position.copy(camera.position);
+  irLight.intensity = IR_INTENSITY * camcorder.nvBlend;
+  const t = now / 1000;
+  vhs.render({
+    time: t,
+    nightVision: camcorder.nvBlend,
+    battery: camcorder.battery / 100,
+    glitch: glitchAmount(t, glitchSeed, camcorder.battery),
+  });
 });
