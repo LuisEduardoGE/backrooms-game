@@ -13,7 +13,7 @@ import { hasLineOfSight } from './game/los';
 import { createFootsteps, type NoiseEvent, stepFootsteps } from './game/noise';
 import { NOTES } from './game/notes';
 import {
-  createSanity, distortionFromSanity, drinkAlmondWater, fearDrain, isInsane, updateSanity,
+  createSanity, distortionFromSanity, drinkAlmondWater, fearDrain, isInsane, jolt, updateSanity,
 } from './game/sanity';
 import { spawnHowlerCell, spawnSmilerCells } from './game/spawns';
 import { createLightPool } from './lighting/lightPool';
@@ -91,6 +91,15 @@ const anyFloor = (x: number, y: number) => getCell(level.grid, x, y) === Cell.Fl
 const darkOnly = (x: number, y: number) => anyFloor(x, y) && isDark(level.grid, x, y);
 /** Sight distance (cells) within which a visible Smiler frightens the player. */
 const SMILER_FEAR_CELLS = 10;
+/** The Presence: lights die around the player for a while. */
+const BLACKOUT_MS = 3000;
+const BLACKOUT_RADIUS = 8;
+const PRESENCE_GLITCH_MS = 800;
+const PRESENCE_JOLT = 3;
+const HOWLER_WARNING_MS = 1500;
+let blackout: { x: number; z: number; until: number } | null = null;
+let glitchUntil = 0;
+let dimUntil = 0;
 /** performance.now() when the tape ended or escaped; null while the tape is running. */
 let endedAt: number | null = null;
 let endRevealed = false;
@@ -146,13 +155,19 @@ function endTape(event: 'die' | 'escape', now: number): void {
   document.exitPointerLock();
 }
 
-function onDirectorEvent(event: DirectorEvent): void {
+function onDirectorEvent(event: DirectorEvent, now: number): void {
   const here = { x: worldToCell(player.pos.x), y: worldToCell(player.pos.z) };
   if (event === 'spawnSmilers') {
     for (const cell of spawnSmilerCells(level.grid, here, entityRng)) entities.push(createEntity(entities.length, 'smiler', cell));
   } else if (event === 'spawnHowler') {
     const cell = spawnHowlerCell(level.grid, here, entityRng);
     if (cell) entities.push(createEntity(entities.length, 'howler', cell));
+    glitchUntil = Math.max(glitchUntil, now + HOWLER_WARNING_MS);
+    dimUntil = now + HOWLER_WARNING_MS;
+  } else if (event === 'presence') {
+    blackout = { x: player.pos.x, z: player.pos.z, until: now + BLACKOUT_MS };
+    glitchUntil = Math.max(glitchUntil, now + PRESENCE_GLITCH_MS);
+    if (!params.god) jolt(sanity, PRESENCE_JOLT);
   }
 }
 showPhase();
@@ -228,7 +243,7 @@ renderer.setAnimationLoop((now: number) => {
       recordedSec += FIXED_DT;
       const footstep = stepFootsteps(footsteps, FIXED_DT, player.moving, player.gait);
       const noises: NoiseEvent[] = footstep ? [{ x: player.pos.x, z: player.pos.z, radius: footstep }] : [];
-      for (const event of updateDirector(director, FIXED_DT, footstep, directorRng)) onDirectorEvent(event);
+      for (const event of updateDirector(director, FIXED_DT, footstep, directorRng)) onDirectorEvent(event, now);
       for (const e of entities) {
         updateEntity(e, FIXED_DT, {
           grid: level.grid,
@@ -271,7 +286,8 @@ renderer.setAnimationLoop((now: number) => {
   const cellX = worldToCell(player.pos.x);
   const cellY = worldToCell(player.pos.z);
   streamer.update(cellX, cellY);
-  lightPool.update(camera.position.x, camera.position.z, now / 1000);
+  const activeBlackout = blackout && now < blackout.until ? { x: blackout.x, z: blackout.z, radius: BLACKOUT_RADIUS } : null;
+  lightPool.update(camera.position.x, camera.position.z, now / 1000, activeBlackout, now < dimUntil);
   props.update(now / 1000);
   entityViews.sync(entities, a, frameDt);
   irLight.position.copy(camera.position);
@@ -291,7 +307,7 @@ renderer.setAnimationLoop((now: number) => {
     time: t,
     nightVision: camcorder.nvBlend,
     battery: camcorder.battery / 100,
-    glitch: ending ? 1 : glitchAmount(t, glitchSeed, camcorder.battery),
+    glitch: ending || now < glitchUntil ? 1 : glitchAmount(t, glitchSeed, camcorder.battery),
     distortion: ending ? 1 : distortionFromSanity(sanity.value),
   });
 });

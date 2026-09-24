@@ -4,6 +4,8 @@ A first-person atmospheric horror game set in **Level 0** of the Backrooms, seen
 
 **Goal:** follow the painted arrows (not all of them tell the truth) to the wall that doesn't sit right, and walk into it. Batteries keep the camcorder's night vision alive; Almond Water steadies your nerves; the dark wears you down. If the tape ends, retry the same tape or start a new one.
 
+**Something else is here.** At first it only moves the lights. After a few minutes, grinning things wait in the dark rooms and come for noise — crouch to stay quiet. Linger (or keep sprinting) and something tall starts looking for you. Break its line of sight and it may lose you.
+
 > Early development. See [CLAUDE.md](CLAUDE.md) for the vision, design pillars and roadmap.
 
 ## Run locally
