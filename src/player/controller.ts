@@ -28,22 +28,41 @@ export const NO_INPUT: MoveInput = Object.freeze({
 
 export interface PlayerState {
   pos: Vec2;
+  /** Position before the latest fixed step (for render interpolation). */
+  prevPos: Vec2;
   yaw: number;
   pitch: number;
   gait: Gait;
   moving: boolean;
   eyeHeight: number;
+  prevEyeHeight: number;
 }
 
 export function createPlayer(pos: Vec2, yaw = 0): PlayerState {
-  return { pos: { ...pos }, yaw, pitch: 0, gait: 'walk', moving: false, eyeHeight: EYE_HEIGHT.stand };
+  return {
+    pos: { ...pos },
+    prevPos: { ...pos },
+    yaw,
+    pitch: 0,
+    gait: 'walk',
+    moving: false,
+    eyeHeight: EYE_HEIGHT.stand,
+    prevEyeHeight: EYE_HEIGHT.stand,
+  };
 }
 
 const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v));
 
+/** Applies mouse look (radians). Called once per rendered frame so looking is never quantised to fixed steps. */
+export function applyLook(p: PlayerState, lookDX: number, lookDY: number): void {
+  p.yaw -= lookDX;
+  p.pitch = clamp(p.pitch - lookDY, -MAX_PITCH, MAX_PITCH);
+}
+
 export function updatePlayer(p: PlayerState, input: MoveInput, dt: number, grid: Grid): PlayerState {
-  p.yaw -= input.lookDX;
-  p.pitch = clamp(p.pitch - input.lookDY, -MAX_PITCH, MAX_PITCH);
+  applyLook(p, input.lookDX, input.lookDY);
+  p.prevPos = { ...p.pos };
+  p.prevEyeHeight = p.eyeHeight;
 
   const sin = Math.sin(p.yaw);
   const cos = Math.cos(p.yaw);

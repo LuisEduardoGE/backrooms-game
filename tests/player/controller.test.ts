@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  createPlayer, EYE_HEIGHT, MAX_PITCH, type MoveInput, NO_INPUT, SPEED, updatePlayer,
+  applyLook, createPlayer, EYE_HEIGHT, MAX_PITCH, type MoveInput, NO_INPUT, SPEED, updatePlayer,
 } from '../../src/player/controller';
 import { Cell, createGrid, setCell } from '../../src/world/grid';
 
@@ -73,5 +73,25 @@ describe('updatePlayer', () => {
   it('is stopped by walls', () => {
     const p = run(createPlayer({ x: 20, z: 20 }), input({ right: 1, sprint: true }), 100);
     expect(p.pos.x).toBeCloseTo(38 - 0.3, 3);
+  });
+
+  it('remembers the previous position and eye height for render interpolation', () => {
+    const p = createPlayer({ x: 20, z: 20 });
+    updatePlayer(p, input({ forward: 1, crouch: true }), 0.1, open);
+    expect(p.prevPos).toEqual({ x: 20, z: 20 });
+    expect(p.prevEyeHeight).toBe(EYE_HEIGHT.stand);
+    const before = { ...p.pos };
+    updatePlayer(p, input({ forward: 1 }), 0.1, open);
+    expect(p.prevPos).toEqual(before);
+  });
+});
+
+describe('applyLook', () => {
+  it('turns and clamps pitch without moving the player', () => {
+    const p = createPlayer({ x: 20, z: 20 });
+    applyLook(p, 0.25, -10);
+    expect(p.yaw).toBeCloseTo(-0.25, 6);
+    expect(p.pitch).toBe(MAX_PITCH);
+    expect(p.pos).toEqual({ x: 20, z: 20 });
   });
 });

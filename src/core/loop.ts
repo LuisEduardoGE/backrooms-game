@@ -20,5 +20,9 @@ export function createFixedStepper(step = FIXED_DT, maxSteps = MAX_STEPS_PER_FRA
       }
       return steps;
     },
+    /** Fraction (0..1) of a step left in the accumulator; blend previous→current state by this when rendering. */
+    alpha(): number {
+      return accumulator / step;
+    },
   };
 }

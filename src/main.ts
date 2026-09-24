@@ -4,7 +4,7 @@ import { createInput } from './core/input';
 import { createFixedStepper, FIXED_DT } from './core/loop';
 import { createRng, deriveSeed } from './core/rng';
 import { createLightPool } from './lighting/lightPool';
-import { createPlayer, NO_INPUT, updatePlayer } from './player/controller';
+import { applyLook, createPlayer, NO_INPUT, updatePlayer } from './player/controller';
 import { createDebugHud } from './ui/debugHud';
 import { parseParams } from './ui/params';
 import { generateLevel } from './world/generator';
@@ -60,12 +60,19 @@ renderer.setAnimationLoop((now: number) => {
   const frameDt = (now - last) / 1000;
   last = now;
 
+  // Look is applied every rendered frame; movement runs in fixed steps and is interpolated below.
+  const frameInput = isLocked() ? input.moveInput() : NO_INPUT;
+  applyLook(player, frameInput.lookDX, frameInput.lookDY);
+  const stepInput = { ...frameInput, lookDX: 0, lookDY: 0 };
   const steps = stepper.advance(frameDt);
-  for (let i = 0; i < steps; i++) {
-    updatePlayer(player, isLocked() ? input.moveInput() : NO_INPUT, FIXED_DT, level.grid);
-  }
+  for (let i = 0; i < steps; i++) updatePlayer(player, stepInput, FIXED_DT, level.grid);
 
-  camera.position.set(player.pos.x, player.eyeHeight, player.pos.z);
+  const a = stepper.alpha();
+  camera.position.set(
+    player.prevPos.x + (player.pos.x - player.prevPos.x) * a,
+    player.prevEyeHeight + (player.eyeHeight - player.prevEyeHeight) * a,
+    player.prevPos.z + (player.pos.z - player.prevPos.z) * a,
+  );
   camera.rotation.set(player.pitch, player.yaw, 0);
   const cellX = worldToCell(player.pos.x);
   const cellY = worldToCell(player.pos.z);
