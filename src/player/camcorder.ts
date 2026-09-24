@@ -7,6 +7,8 @@ export const DRAIN_NIGHT_VISION = 1.5;
 export const NV_FADE_SPEED = 4;
 /** Below this percent the battery icon blinks and the tape glitches more. */
 export const LOW_BATTERY = 15;
+/** Charge restored by one battery pickup (percent). */
+export const BATTERY_PICKUP = 35;
 
 export interface Camcorder {
   battery: number;
@@ -34,4 +36,8 @@ export function updateCamcorder(c: Camcorder, dt: number): void {
   const target = c.nightVision ? 1 : 0;
   const step = NV_FADE_SPEED * dt;
   c.nvBlend += Math.max(-step, Math.min(step, target - c.nvBlend));
+}
+
+export function addBattery(c: Camcorder, amount = BATTERY_PICKUP): void {
+  c.battery = Math.min(BATTERY_MAX, c.battery + amount);
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  BATTERY_MAX, createCamcorder, DRAIN_NIGHT_VISION, DRAIN_PASSIVE, toggleNightVision, updateCamcorder,
+  addBattery, BATTERY_MAX, BATTERY_PICKUP, createCamcorder, DRAIN_NIGHT_VISION, DRAIN_PASSIVE, toggleNightVision, updateCamcorder,
 } from '../../src/player/camcorder';
 
 function run(c: ReturnType<typeof createCamcorder>, seconds: number, dt = 0.1) {
@@ -57,5 +57,17 @@ describe('camcorder', () => {
     toggleNightVision(c);
     run(c, 0.1);
     expect(c.nvBlend).toBeCloseTo(0.6, 6);
+  });
+});
+
+describe('addBattery', () => {
+  it('adds a pickup worth of charge, capped at the max', () => {
+    const c = createCamcorder();
+    c.battery = 20;
+    addBattery(c);
+    expect(c.battery).toBe(20 + BATTERY_PICKUP);
+    addBattery(c);
+    addBattery(c);
+    expect(c.battery).toBe(BATTERY_MAX);
   });
 });
