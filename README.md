@@ -11,5 +11,5 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:5173 and click to enter. Controls: WASD move · mouse look · Shift sprint · C crouch · Esc release.
+Open http://localhost:5173 and click to enter. Controls: WASD move · mouse look · Shift sprint · C crouch · N night vision · Esc pause.
 Add `?debug` for an fps counter and minimap, `?seed=123` to replay a specific layout.

@@ -1,5 +1,6 @@
 import './style.css';
 import * as THREE from 'three';
+import { nextPhase, type Phase } from './core/gameState';
 import { createInput } from './core/input';
 import { createFixedStepper, FIXED_DT } from './core/loop';
 import { createRng, deriveSeed } from './core/rng';
@@ -23,6 +24,8 @@ const IR_INTENSITY = 6;
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
 const overlay = document.getElementById('overlay') as HTMLDivElement;
+const titleScreen = document.getElementById('title-screen') as HTMLDivElement;
+const pauseScreen = document.getElementById('pause-screen') as HTMLDivElement;
 
 const renderer = new THREE.WebGLRenderer({ canvas, powerPreference: 'high-performance' });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
@@ -54,15 +57,29 @@ const glitchSeed = deriveSeed(seed, 'glitch');
 const vhs = createVhsComposer(renderer, scene, camera, window.innerWidth, window.innerHeight);
 const hud = createHud(document.body);
 const tapeStart = tapeStartTime(seed);
-/** Seconds of footage recorded; only advances while recording. */
+/** Seconds of footage recorded; only advances while playing. */
 let recordedSec = 0;
 
+let phase: Phase = 'title';
 const isLocked = () => document.pointerLockElement === canvas;
 const input = createInput(window, isLocked);
-overlay.addEventListener('click', () => canvas.requestPointerLock());
+
+function showPhase(): void {
+  overlay.hidden = phase === 'playing';
+  titleScreen.hidden = phase !== 'title';
+  pauseScreen.hidden = phase !== 'paused';
+  hud.setVisible(phase !== 'title');
+}
+showPhase();
+
+overlay.addEventListener('click', () => {
+  // Browsers refuse to re-lock for ~1 s after Esc; swallow that rejection — the next click works.
+  Promise.resolve(canvas.requestPointerLock()).catch(() => undefined);
+});
 document.addEventListener('pointerlockchange', () => {
-  overlay.hidden = isLocked();
-  if (!isLocked()) input.clear();
+  phase = nextPhase(phase, isLocked() ? 'lock' : 'unlock');
+  input.clear();
+  showPhase();
 });
 
 window.addEventListener('resize', () => {
@@ -78,16 +95,18 @@ let last = performance.now();
 renderer.setAnimationLoop((now: number) => {
   const frameDt = (now - last) / 1000;
   last = now;
+  const playing = phase === 'playing';
 
   // Look is applied every rendered frame; movement runs in fixed steps and is interpolated below.
-  const frameInput = isLocked() ? input.moveInput() : NO_INPUT;
-  if (isLocked() && input.consumePressed('KeyN')) toggleNightVision(camcorder);
+  const frameInput = playing ? input.moveInput() : NO_INPUT;
+  if (playing && input.consumePressed('KeyN')) toggleNightVision(camcorder);
   applyLook(player, frameInput.lookDX, frameInput.lookDY);
   const stepInput = { ...frameInput, lookDX: 0, lookDY: 0 };
   const steps = stepper.advance(frameDt);
   for (let i = 0; i < steps; i++) {
+    // Steps keep running when not playing (with no input) so interpolation settles instead of drifting.
     updatePlayer(player, stepInput, FIXED_DT, level.grid);
-    if (isLocked()) {
+    if (playing) {
       updateCamcorder(camcorder, FIXED_DT);
       recordedSec += FIXED_DT;
     }
@@ -104,15 +123,17 @@ renderer.setAnimationLoop((now: number) => {
   const cellY = worldToCell(player.pos.z);
   streamer.update(cellX, cellY);
   lightPool.update(camera.position.x, camera.position.z, now / 1000);
-  debugHud?.update(frameDt, player);
+  irLight.position.copy(camera.position);
+  irLight.intensity = IR_INTENSITY * camcorder.nvBlend;
+
   hud.update({
-    recording: isLocked(),
+    recording: playing,
     battery: camcorder.battery,
     nightVision: camcorder.nightVision,
     clockMs: tapeStart + recordedSec * 1000,
   });
-  irLight.position.copy(camera.position);
-  irLight.intensity = IR_INTENSITY * camcorder.nvBlend;
+  debugHud?.update(frameDt, player);
+
   const t = now / 1000;
   vhs.render({
     time: t,

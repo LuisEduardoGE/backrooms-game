@@ -11,8 +11,16 @@
   <body>
     <canvas id="game"></canvas>
     <div id="overlay">
-      <p class="title">CLICK TO ENTER</p>
-      <p class="hint">WASD move · Mouse look · Shift sprint · C crouch · Esc release</p>
+      <div id="title-screen" class="screen">
+        <p class="brand">LEVEL 0</p>
+        <p class="title">▶ PLAY TAPE</p>
+        <p class="hint">WASD move · Mouse look · Shift sprint · C crouch · N night vision · Esc pause</p>
+        <p class="warning">⚠ Contains flickering lights and flashing effects.</p>
+      </div>
+      <div id="pause-screen" class="screen" hidden>
+        <p class="title">▮▮ PAUSE</p>
+        <p class="hint">Click to resume</p>
+      </div>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
