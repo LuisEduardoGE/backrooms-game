@@ -35,7 +35,7 @@ const level = generateLevel(seed);
 const materials = createWorldMaterials(createRng(deriveSeed(seed, 'textures')));
 const streamer = createChunkStreamer(scene, level.grid, materials);
 const lightPool = createLightPool(scene, level.grid, deriveSeed(seed, 'lights'));
-const player = createPlayer({ x: cellToWorld(level.start.x), z: cellToWorld(level.start.y) });
+const player = createPlayer({ x: cellToWorld(level.start.x), z: cellToWorld(level.start.y) }, level.startYaw);
 const debugHud = params.debug ? createDebugHud(level) : null;
 if (params.debug) console.info(`[backrooms] seed ${seed} — reload with ?debug&seed=${seed} to replay`);
 

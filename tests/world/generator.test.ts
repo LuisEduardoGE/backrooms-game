@@ -67,4 +67,22 @@ describe('generateLevel', () => {
   it('throws a clear error when no layout can satisfy the exit distance', () => {
     expect(() => generateLevel(1, { exitDistanceRatio: 5 })).toThrow(/no valid layout/);
   });
+
+  it('faces the spawn toward the longest open run of floor (never into a wall)', () => {
+    const run = (grid: ReturnType<typeof generateLevel>['grid'], x: number, y: number, dx: number, dy: number) => {
+      let n = 0;
+      while (getCell(grid, x + dx * (n + 1), y + dy * (n + 1)) === Cell.Floor) n++;
+      return n;
+    };
+    for (let seed = 2000; seed < 2025; seed++) {
+      const { grid, start, startYaw } = generateLevel(seed);
+      const dx = Math.round(-Math.sin(startYaw));
+      const dy = Math.round(-Math.cos(startYaw));
+      const ahead = run(grid, start.x, start.y, dx, dy);
+      expect(ahead).toBeGreaterThan(0);
+      for (const [ox, oy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        expect(ahead).toBeGreaterThanOrEqual(run(grid, start.x, start.y, ox, oy));
+      }
+    }
+  });
 });

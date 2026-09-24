@@ -203,6 +203,8 @@ export interface Level {
   grid: Grid;
   rooms: Room[];
   start: Point;
+  /** Camera yaw at spawn, facing the longest open run of floor (yaw 0 looks toward −y). */
+  startYaw: number;
   exit: Point;
 }
 
@@ -227,7 +229,7 @@ function tryGenerate(layoutSeed: number, o: GenOptions): Omit<Level, 'seed'> | n
   const start = pickFloorCell(grid, startRoom, rng);
   assignDarkZones(grid, rooms, startRoom.id, rng, o.darkFraction);
   const exit = pickExit(grid, start, rng, o);
-  return exit ? { grid, rooms, start, exit } : null;
+  return exit ? { grid, rooms, start, startYaw: pickStartYaw(grid, start), exit } : null;
 }
 
 /** Start near a random corner so the far side of the map is available for the exit. */
@@ -241,6 +243,29 @@ function pickStartRoom(rooms: Room[], rng: Rng, o: GenOptions): Room {
   const dist = (r: Room) => Math.hypot(r.x + r.w / 2 - corner.x, r.y + r.h / 2 - corner.y);
   const near = rooms.filter((r) => dist(r) < o.width * 0.25);
   return near.length > 0 ? rng.pick(near) : rooms.reduce((best, r) => (dist(r) < dist(best) ? r : best));
+}
+
+/** Grid step for each spawn yaw: yaw 0 → −y, π/2 → −x, π → +y, −π/2 → +x. */
+const FACINGS = [
+  { yaw: 0, dx: 0, dy: -1 },
+  { yaw: Math.PI / 2, dx: -1, dy: 0 },
+  { yaw: Math.PI, dx: 0, dy: 1 },
+  { yaw: -Math.PI / 2, dx: 1, dy: 0 },
+];
+
+/** Faces the player down the longest straight run of floor so the first frame isn't a wall. */
+function pickStartYaw(grid: Grid, start: Point): number {
+  let best = FACINGS[0];
+  let bestRun = -1;
+  for (const f of FACINGS) {
+    let run = 0;
+    while (getCell(grid, start.x + f.dx * (run + 1), start.y + f.dy * (run + 1)) === Cell.Floor) run++;
+    if (run > bestRun) {
+      best = f;
+      bestRun = run;
+    }
+  }
+  return best.yaw;
 }
 
 function pickFloorCell(grid: Grid, room: Room, rng: Rng): Point {
