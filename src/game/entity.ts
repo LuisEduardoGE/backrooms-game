@@ -22,7 +22,8 @@ export interface EntityTuning {
 
 export const TUNING: Record<EntityKind, EntityTuning> = {
   smiler: { roamSpeed: 0.8, investigateSpeed: 1.8, chaseSpeed: 3.2, sightCells: 10, roamRadius: 6, loseSightSec: 4, searchSec: 6 },
-  howler: { roamSpeed: 1.4, investigateSpeed: 2.6, chaseSpeed: 4.5, sightCells: 20, roamRadius: 20, loseSightSec: 4, searchSec: 8 },
+  // Sight 12 cells (24 m) ≈ what the fog lets the player see back; no audio warning exists yet.
+  howler: { roamSpeed: 1.4, investigateSpeed: 2.6, chaseSpeed: 4.5, sightCells: 12, roamRadius: 20, loseSightSec: 4, searchSec: 8 },
 };
 
 /** Metres between centres at which the player is caught. */
@@ -30,6 +31,10 @@ export const CATCH_DISTANCE = 0.7;
 const REPATH_SEC = 0.5;
 const SEARCH_WANDER = 4;
 const MAX_PATH_EXPANSIONS = 3000;
+/** How far (cells) to look for a reachable stand-in when a goal cell itself can't be entered. */
+const GOAL_FALLBACK_RADIUS = 4;
+/** Within this many cells of a visible player, walk straight at them instead of cell to cell. */
+const FINAL_APPROACH_CELLS = 1.5;
 
 export interface Entity {
   id: number;
@@ -49,6 +54,8 @@ export interface Entity {
 export interface EntityWorld {
   grid: Grid;
   canEnter: (x: number, y: number) => boolean;
+  /** Whether it may lunge straight at a player standing in this cell (Smilers: only dark cells). */
+  mayApproach: (x: number, y: number) => boolean;
   rng: Rng;
   player: Vec2;
   noises: readonly NoiseEvent[];
@@ -70,6 +77,25 @@ function randomNearby(w: EntityWorld, around: Point, radius: number): Point | nu
   return null;
 }
 
+/**
+ * The goal itself if enterable, else the nearest enterable cell within GOAL_FALLBACK_RADIUS
+ * (a player hugging a pillar, a noise in a lit room seen from the dark), else null.
+ */
+function nearestEnterable(w: EntityWorld, goal: Point): Point | null {
+  if (w.canEnter(goal.x, goal.y)) return goal;
+  let best: Point | null = null;
+  let bestD = Infinity;
+  for (let dy = -GOAL_FALLBACK_RADIUS; dy <= GOAL_FALLBACK_RADIUS; dy++) {
+    for (let dx = -GOAL_FALLBACK_RADIUS; dx <= GOAL_FALLBACK_RADIUS; dx++) {
+      const d = dx * dx + dy * dy;
+      if (d >= bestD || !w.canEnter(goal.x + dx, goal.y + dy)) continue;
+      best = { x: goal.x + dx, y: goal.y + dy };
+      bestD = d;
+    }
+  }
+  return best;
+}
+
 function setGoal(e: Entity, goal: Point | null): void {
   e.goal = goal;
   e.path = [];
@@ -88,8 +114,8 @@ export function updateEntity(e: Entity, dt: number, w: EntityWorld): void {
     e.lastSeen = { ...w.player };
     if (e.state !== 'chase') e.state = 'chase';
     e.timer = t.loseSightSec;
-    const target = cellOf(w.player);
-    if (!e.goal || !sameCell(e.goal, target)) e.goal = target;
+    const target = nearestEnterable(w, cellOf(w.player));
+    if (target && (!e.goal || !sameCell(e.goal, target))) e.goal = target;
   } else if (e.state === 'chase') {
     e.timer -= dt;
     if (e.timer <= 0) {
@@ -101,8 +127,10 @@ export function updateEntity(e: Entity, dt: number, w: EntityWorld): void {
   if (e.state !== 'chase') {
     for (const n of w.noises) {
       if (n.radius > 0 && Math.hypot(n.x - e.pos.x, n.z - e.pos.z) / CELL_SIZE <= n.radius) {
+        const goal = nearestEnterable(w, cellOf(n));
+        if (!goal) continue;
         e.state = 'investigate';
-        setGoal(e, cellOf(n));
+        setGoal(e, goal);
       }
     }
   }
@@ -136,6 +164,19 @@ export function updateEntity(e: Entity, dt: number, w: EntityWorld): void {
 
   // Movement along the path.
   const speed = e.state === 'chase' ? t.chaseSpeed : e.state === 'investigate' ? t.investigateSpeed : t.roamSpeed;
+  const playerCell = cellOf(w.player);
+  if (sees && distCells <= FINAL_APPROACH_CELLS && w.mayApproach(playerCell.x, playerCell.y)) {
+    // Final approach: cell-centre paths would stop beside an off-centre player instead of reaching them.
+    const dx = w.player.x - e.pos.x;
+    const dz = w.player.z - e.pos.z;
+    const d = Math.hypot(dx, dz);
+    if (d > 1e-6) {
+      const step = Math.min(d, speed * dt);
+      e.pos = { x: e.pos.x + (dx / d) * step, z: e.pos.z + (dz / d) * step };
+      e.heading = Math.atan2(-dx, -dz);
+    }
+    return;
+  }
   let budget = speed * dt;
   while (budget > 0 && e.path.length > 0) {
     const target = { x: cellToWorld(e.path[0].x), z: cellToWorld(e.path[0].y) };

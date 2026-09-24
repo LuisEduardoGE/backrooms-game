@@ -13,8 +13,14 @@ function open(): Grid {
 const floor = (g: Grid) => (x: number, y: number) => getCell(g, x, y) === Cell.Floor;
 const at = (cx: number, cy: number) => ({ x: cellToWorld(cx), z: cellToWorld(cy) });
 
-function world(g: Grid, player: { x: number; z: number }, noises: NoiseEvent[] = [], canEnter = floor(g)): EntityWorld {
-  return { grid: g, canEnter, rng: createRng(3), player, noises };
+function world(
+  g: Grid,
+  player: { x: number; z: number },
+  noises: NoiseEvent[] = [],
+  canEnter = floor(g),
+  mayApproach: (x: number, y: number) => boolean = () => true,
+): EntityWorld {
+  return { grid: g, canEnter, mayApproach, rng: createRng(3), player, noises };
 }
 function run(e: Entity, w: EntityWorld, seconds: number, dt = 1 / 60) {
   for (let i = 0; i < Math.round(seconds / dt); i++) updateEntity(e, dt, { ...w, noises: i === 0 ? w.noises : [] });
@@ -73,7 +79,7 @@ describe('updateEntity', () => {
     const g = open();
     const dark = (x: number, y: number) => floor(g)(x, y) && x <= 10;
     const e = createEntity(0, 'smiler', { x: 5, y: 10 });
-    const w = world(g, at(14, 10), [], dark);
+    const w = world(g, at(14, 10), [], dark, dark);
     for (let i = 0; i < 600; i++) {
       updateEntity(e, 1 / 60, w);
       expect(worldToCell(e.pos.x)).toBeLessThanOrEqual(10);
@@ -94,5 +100,59 @@ describe('updateEntity', () => {
     run(a, world(g, at(25, 25)), 3);
     run(b, world(g, at(25, 25)), 3);
     expect(a.pos).toEqual(b.pos);
+  });
+});
+
+describe('catching and reaching', () => {
+  /** Runs until the entity catches the (possibly moving) player; returns seconds taken or Infinity. */
+  function timeToCatch(g: Grid, e: Entity, player: { x: number; z: number }, seconds: number, move?: (p: { x: number; z: number }, dt: number) => void) {
+    const dt = 1 / 60;
+    for (let i = 0; i < seconds / dt; i++) {
+      move?.(player, dt);
+      updateEntity(e, dt, world(g, player));
+      if (caughtPlayer(e, player)) return i * dt;
+    }
+    return Infinity;
+  }
+
+  it('catches a player standing off-centre in a cell', () => {
+    const e = createEntity(0, 'howler', { x: 5, y: 5 });
+    expect(timeToCatch(open(), e, { x: cellToWorld(10), z: cellToWorld(5) + 0.9 }, 10)).toBeLessThan(10);
+  });
+
+  it('catches a player walking away off-centre', () => {
+    const e = createEntity(0, 'howler', { x: 5, y: 5 });
+    const p = { x: cellToWorld(10), z: cellToWorld(5) + 0.9 };
+    const walk = (q: { x: number; z: number }, dt: number) => {
+      q.x = Math.min(54, q.x + 1.1 * dt);
+    };
+    expect(timeToCatch(open(), e, p, 20, walk)).toBeLessThan(20);
+  });
+
+  it('still reaches a player hugging a pillar (whose cell is not walkable)', () => {
+    const g = open();
+    setCell(g, 15, 10, Cell.Pillar); // cell spans x 30..32; the solid box only 30.6..31.4
+    const e = createEntity(0, 'howler', { x: 5, y: 10 });
+    expect(timeToCatch(g, e, { x: 30.3, z: cellToWorld(10) }, 10)).toBeLessThan(10);
+  });
+
+  it('sends a Smiler to the edge of its dark zone toward a noise made in the light', () => {
+    const g = open();
+    for (let x = 1; x <= 28; x++) setCell(g, x, 18, Cell.Wall); // hide the player
+    const dark = (x: number, y: number) => floor(g)(x, y) && x <= 10 && y < 18;
+    const e = createEntity(0, 'smiler', { x: 4, y: 10 });
+    const w = world(g, at(25, 25), [{ ...at(14, 10), radius: 12 }], dark, dark);
+    let maxX = 0;
+    for (let i = 0; i < 600; i++) {
+      updateEntity(e, 1 / 60, { ...w, noises: i === 0 ? w.noises : [] });
+      maxX = Math.max(maxX, worldToCell(e.pos.x));
+    }
+    expect(maxX).toBe(10);
+  });
+
+  it('does not spot a silent player beyond what the fog lets you see (no audio warning yet)', () => {
+    const e = createEntity(0, 'howler', { x: 5, y: 5 });
+    updateEntity(e, 1 / 60, world(open(), at(20, 5)));
+    expect(e.state).not.toBe('chase');
   });
 });

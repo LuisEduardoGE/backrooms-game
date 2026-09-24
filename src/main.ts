@@ -248,6 +248,7 @@ renderer.setAnimationLoop((now: number) => {
         updateEntity(e, FIXED_DT, {
           grid: level.grid,
           canEnter: e.kind === 'smiler' ? darkOnly : anyFloor,
+          mayApproach: e.kind === 'smiler' ? (x, y) => isDark(level.grid, x, y) : () => true,
           rng: entityRng,
           player: player.pos,
           noises,
