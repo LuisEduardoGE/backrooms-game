@@ -7,6 +7,12 @@ function key(type: 'keydown' | 'keyup', code: string): Event {
   return e;
 }
 
+function repeatKey(code: string): Event {
+  const e = key('keydown', code);
+  Object.defineProperty(e, 'repeat', { value: true });
+  return e;
+}
+
 function mouse(dx: number, dy: number): Event {
   const e = new Event('mousemove');
   Object.defineProperties(e, { movementX: { value: dx }, movementY: { value: dy } });
@@ -74,5 +80,39 @@ describe('createInput', () => {
     input.dispose();
     target.dispatchEvent(key('keydown', 'KeyW'));
     expect(input.isDown('KeyW')).toBe(false);
+  });
+});
+
+describe('consumePressed', () => {
+  it('reports a press exactly once', () => {
+    const { target, input } = setup();
+    target.dispatchEvent(key('keydown', 'KeyN'));
+    expect(input.consumePressed('KeyN')).toBe(true);
+    expect(input.consumePressed('KeyN')).toBe(false);
+  });
+
+  it('ignores keyboard auto-repeat while the key is held', () => {
+    const { target, input } = setup();
+    target.dispatchEvent(key('keydown', 'KeyN'));
+    input.consumePressed('KeyN');
+    target.dispatchEvent(repeatKey('KeyN'));
+    target.dispatchEvent(repeatKey('KeyN'));
+    expect(input.consumePressed('KeyN')).toBe(false);
+  });
+
+  it('counts a new press after release', () => {
+    const { target, input } = setup();
+    target.dispatchEvent(key('keydown', 'KeyN'));
+    input.consumePressed('KeyN');
+    target.dispatchEvent(key('keyup', 'KeyN'));
+    target.dispatchEvent(key('keydown', 'KeyN'));
+    expect(input.consumePressed('KeyN')).toBe(true);
+  });
+
+  it('drops pending presses on clear()', () => {
+    const { target, input } = setup();
+    target.dispatchEvent(key('keydown', 'KeyN'));
+    input.clear();
+    expect(input.consumePressed('KeyN')).toBe(false);
   });
 });

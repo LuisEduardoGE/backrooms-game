@@ -12,6 +12,8 @@ const CROUCH = ['KeyC'];
 
 export interface Input {
   isDown(code: string): boolean;
+  /** True once per physical press of `code` since the last call (keyboard auto-repeat is ignored). */
+  consumePressed(code: string): boolean;
   /** Current movement intent; consumes mouse movement accumulated since the last call. */
   moveInput(sensitivity?: number): MoveInput;
   clear(): void;
@@ -20,16 +22,25 @@ export interface Input {
 
 export function createInput(target: EventTarget, isLocked: () => boolean): Input {
   const down = new Set<string>();
+  const pressed = new Set<string>();
   let lookX = 0;
   let lookY = 0;
 
   const clear = () => {
     down.clear();
+    pressed.clear();
     lookX = 0;
     lookY = 0;
   };
   const listeners: Array<[string, (e: Event) => void]> = [
-    ['keydown', (e) => down.add((e as KeyboardEvent).code)],
+    [
+      'keydown',
+      (e) => {
+        const k = e as KeyboardEvent;
+        down.add(k.code);
+        if (!k.repeat) pressed.add(k.code);
+      },
+    ],
     ['keyup', (e) => down.delete((e as KeyboardEvent).code)],
     [
       'mousemove',
@@ -47,6 +58,7 @@ export function createInput(target: EventTarget, isLocked: () => boolean): Input
 
   return {
     isDown: (code) => down.has(code),
+    consumePressed: (code) => pressed.delete(code),
     moveInput(sensitivity = MOUSE_SENSITIVITY) {
       const input: MoveInput = {
         forward: (any(FORWARD) ? 1 : 0) - (any(BACK) ? 1 : 0),
