@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  flicker, FLICKER_RATE, isFaultyLight, isLightCell, lightFalloff, nearestLitLights, nearestLitLightsAt,
+  flicker, FLICKER_RATE, isFaultyLight, isLightCell, lightFalloff, nearestLitLights, nearestLitLightsAt, panelGlow,
 } from '../../src/lighting/lights';
 import { Cell, createGrid, setCell } from '../../src/world/grid';
 
@@ -110,5 +110,14 @@ describe('nearestLitLightsAt', () => {
   it('ranks fixtures by exact world distance, not by the player cell', () => {
     // Player in odd cell 7 near its right edge: fixture cell 8 (x=17 m) is 1.1 m away, cell 6 (x=13 m) is 2.9 m.
     expect(nearestLitLightsAt(g, 15.9, 17, 1)).toEqual([{ x: 8, y: 8 }]);
+  });
+});
+
+describe('panelGlow', () => {
+  it('dims the ceiling panels along with the lights, so a blackout never looks like a rendering bug', () => {
+    expect(panelGlow(false, false)).toBe(1);
+    expect(panelGlow(false, true)).toBeLessThan(0.5);
+    expect(panelGlow(true, false)).toBeLessThan(panelGlow(false, true));
+    expect(panelGlow(true, true)).toBe(panelGlow(true, false));
   });
 });

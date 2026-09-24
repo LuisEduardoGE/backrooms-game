@@ -57,3 +57,17 @@ export function flicker(timeSec: number, lightId: number, seed: number): number 
   if (isFaultyLight(lightId, seed)) return r < 0.35 ? 0.15 + r : 1;
   return 0.96 + 0.04 * r;
 }
+
+/** Panel glow while the Howler's warning holds the lights down (matches the pooled lights' 35 %). */
+const PANEL_DIM = 0.35;
+/** Panel glow during a Presence blackout: nearly dead, a faint afterglow. */
+const PANEL_BLACKOUT = 0.12;
+
+/**
+ * Multiplier for the ceiling panels' emissive glow, so they die with the pooled lights instead of
+ * glowing over a darkened room. (Panels share one material, so this dims them all.)
+ */
+export function panelGlow(blackout: boolean, dim: boolean): number {
+  if (blackout) return PANEL_BLACKOUT;
+  return dim ? PANEL_DIM : 1;
+}

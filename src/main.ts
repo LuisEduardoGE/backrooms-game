@@ -17,6 +17,7 @@ import {
 } from './game/sanity';
 import { spawnHowlerCell, spawnSmilerCells } from './game/spawns';
 import { createLightPool } from './lighting/lightPool';
+import { panelGlow } from './lighting/lights';
 import { addBattery, createCamcorder, toggleNightVision, updateCamcorder } from './player/camcorder';
 import { applyLook, createPlayer, NO_INPUT, updatePlayer } from './player/controller';
 import { createDebugHud } from './ui/debugHud';
@@ -72,6 +73,7 @@ const level = generateLevel(seed);
 const materials = createWorldMaterials(createRng(deriveSeed(seed, 'textures')));
 const streamer = createChunkStreamer(scene, level.grid, materials);
 const lightPool = createLightPool(scene, level.grid, deriveSeed(seed, 'lights'));
+const panelEmissive = materials.lightOn.emissiveIntensity;
 const truePath = shortestPath(level.grid, level.start, level.exit);
 const arrows = placeArrows(level.grid, truePath, createRng(deriveSeed(seed, 'clues')));
 const items = placeItems(level, truePath, createRng(deriveSeed(seed, 'items')));
@@ -289,6 +291,7 @@ renderer.setAnimationLoop((now: number) => {
   streamer.update(cellX, cellY);
   const activeBlackout = blackout && now < blackout.until ? { x: blackout.x, z: blackout.z, radius: BLACKOUT_RADIUS } : null;
   lightPool.update(camera.position.x, camera.position.z, now / 1000, activeBlackout, now < dimUntil);
+  materials.lightOn.emissiveIntensity = panelEmissive * panelGlow(activeBlackout !== null, now < dimUntil);
   props.update(now / 1000);
   entityViews.sync(entities, a, frameDt);
   irLight.position.copy(camera.position);
