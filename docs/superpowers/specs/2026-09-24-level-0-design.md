@@ -20,7 +20,7 @@ The player wakes in **Level 0** of the Backrooms — endless mono-yellow rooms, 
 
 - **Platform:** desktop browsers only (keyboard + mouse, Pointer Lock). Touch/mobile devices get a "play on desktop" screen with a trailer GIF.
 - **Stack:** TypeScript, Vite, Three.js, `postprocessing` (pmndrs) + custom VHS shader, Web Audio API, Vitest.
-- **Style:** realistic VHS — CC0 PBR textures (ambientCG / Poly Haven), soft fluorescent lighting, fog, VHS post-processing on top. All asset sources + licenses recorded in `public/CREDITS.md`.
+- **Style:** realistic VHS — soft fluorescent lighting, fog, VHS post-processing on top. Milestone 1 uses procedurally generated canvas textures (wallpaper, carpet, ceiling tiles); CC0 PBR textures (ambientCG / Poly Haven) may replace them in the polish milestone. All asset sources + licenses recorded in `public/CREDITS.md`.
 - **Hosting:** static site (Vercel or GitHub Pages). Validate locally first.
 
 ## 4. Architecture
@@ -66,7 +66,7 @@ src/
 |---|---|
 | WASD + mouse | move / look |
 | Shift | sprint (fast, loud) |
-| Ctrl / C | crouch (slow, silent) |
+| C | crouch (slow, silent) — not Ctrl: Ctrl+W would close the browser tab while walking |
 | N | toggle night vision |
 | E | interact (pick up, read note, drink) |
 | Esc | pause |
