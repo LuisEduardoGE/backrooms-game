@@ -2,82 +2,75 @@
 
 ## Vision
 
-A first-person, atmospheric horror/exploration game set in **the Backrooms**, starting with
-**Level 1 — "Habitable Zone"**: an endless, dimly lit concrete warehouse with exposed
-rebar, flickering fluorescent lights, low-hanging fog, puddles on the floor, and scattered
-supply crates. It's "safer" than Level 0, but the lights sometimes cut out — and that's
-when things move in the dark.
+A first-person found-footage horror game in the browser, set in **Level 0 of the Backrooms**:
+endless mono-yellow rooms, damp carpet, buzzing fluorescent lights — all seen through a
+1990s **VHS camcorder**. Follow clues to a noclip exit before an escalating threat
+(the Presence → Smilers → the Howler) or your own collapsing sanity ends the tape.
 
-The goal of the first milestone is a **playable vertical slice of Level 1**: walk around,
-feel the dread, find supplies, survive a blackout, and find the exit to the next level.
+Purpose: a **portfolio showcase** (impressive within 30 seconds of opening the link) and a
+**learning project** for 3D/game dev. Desktop browser only (keyboard + mouse).
 
-## Level 1 — design pillars
+**Full design spec:** `docs/superpowers/specs/2026-09-24-level-0-design.md` — the source of truth.
+Update the spec when a design decision changes.
 
-- **Liminal atmosphere first.** Sound, lighting and fog carry the experience more than gameplay mechanics. Buzzing fluorescents, distant machinery hum, dripping water, echoing footsteps.
-- **Endless-feeling space.** Procedurally generated chunks of concrete pillars, corridors, open halls and stairwells that stream in around the player. It should feel infinite and disorienting — no two walks identical.
-- **Light as a resource.** Flickering lights and periodic blackouts. During a blackout the player relies on a flashlight with limited battery.
-- **Supplies.** Crates contain Almond Water (restores sanity), batteries (flashlight), and occasional notes/lore.
-- **Sanity, not health bars.** Staying in darkness or near entities drains sanity; low sanity distorts audio/visuals (vignette, chromatic aberration, whispers).
-- **Entities are rare and heard before seen.** Keep them mostly off-screen; tension > jump scares.
-- **Exit.** Finding a specific door/stairwell (rare spawn) completes the level — the hook for Level 2 later.
+## Tech stack
 
-## Tech stack (default — change here if we decide otherwise)
+- **TypeScript + Vite + Three.js** (plain, no React for the game)
+- **`postprocessing`** (pmndrs) + custom shader for the VHS effect chain
+- **Web Audio API** for ambience and positional audio
+- **Vitest** for pure-logic unit tests
+- HTML/CSS overlays for HUD and menus
 
-- **TypeScript + Vite** — fast dev loop, runs in any browser.
-- **Three.js** — 3D rendering (first-person camera, `PointerLockControls`, fog, instanced meshes for pillars/lights).
-- **Web Audio API** (or Howler.js) — positional/ambient audio.
-- Plain TS game loop + small ECS-style modules; no heavy engine.
-- **Vitest** for unit tests of pure logic (chunk generation, sanity system, inventory).
+## Architecture rules
 
-## Project structure (target)
+- **Pure logic is Three.js-free.** Generation, pathfinding, noise/hearing, entity state
+  machines, sanity, battery and the threat director live in plain TS modules and are unit-tested.
+  Three.js code only renders state.
+- **Everything is deterministic from the run seed** (seeded RNG sub-streams). Retry = same seed.
+- World is a finite 200×200 grid (1 cell = 2 m) streamed in 16×16-cell chunks; instanced meshes;
+  emissive ceiling panels + only 4–6 real lights near the player; fog hides the load edge.
+- Collision is circle-vs-grid, no physics engine. Entities use A* on the grid.
+- Performance budget: **60 fps on a mid-range laptop.**
+
+## Project structure
 
 ```
 src/
-  main.ts            # bootstrap: renderer, scene, loop
-  core/              # game loop, input, time, events
-  world/             # procedural chunk generation + streaming for Level 1
-  player/            # controller, flashlight, inventory, sanity
-  lighting/          # fluorescent flicker + blackout director
-  audio/             # ambience, footsteps, positional sfx
-  entities/          # entity AI (later)
-  ui/                # HUD, menus, notes overlay
-public/
-  textures/ models/ audio/
+  main.ts      core/    world/    player/    lighting/
+  threat/      audio/   fx/       items/     ui/
+public/        textures/ models/ audio/ CREDITS.md
 tests/
+docs/superpowers/specs/   design specs
+docs/superpowers/plans/   implementation plans
 ```
 
 ## Commands
 
-(Fill in once the project is scaffolded.)
+(Fill in once scaffolded.)
 
 ```
 npm install
-npm run dev       # local dev server
-npm run build     # production build
-npm test          # vitest
+npm run dev       # local dev server  (append ?debug for fps, seed, minimap, god mode)
+npm run build
+npm test
 ```
 
 ## Conventions
 
-- Keep world generation **deterministic from a seed** so bugs are reproducible.
-- Pure logic (generation, sanity, inventory) lives outside Three.js code so it can be unit-tested.
-- Performance budget: 60 fps on a mid-range laptop — use instancing, chunk culling, and a small number of real lights (fake the rest with emissive materials).
-- Assets must be self-made, CC0, or properly licensed — record source + license in `public/CREDITS.md`.
+- Assets must be self-made or CC0/properly licensed; record source + license in `public/CREDITS.md`.
 - Validate locally in the browser before deploying anywhere.
+- Each milestone must end in a playable build.
 
 ## Skills
 
-- `find-skills` is installed globally (`~/.claude/skills/find-skills`). Use it to discover
-  helpful skills (e.g. Three.js, game dev, audio) before building a subsystem from scratch.
-- Use `superpowers:brainstorming` before designing new features, and
-  `superpowers:writing-plans` before multi-step implementation.
+- `find-skills` is installed globally (`~/.claude/skills/find-skills`) — use it to look for
+  helpful skills (Three.js, shaders, game dev, audio) before building a subsystem from scratch.
+- `superpowers:brainstorming` before new features; `superpowers:writing-plans` before multi-step work.
 
-## Roadmap
+## Milestones
 
-1. Scaffold Vite + TS + Three.js; first-person movement in a single hand-built room.
-2. Procedural chunk generation + streaming for Level 1.
-3. Lighting: flickering fluorescents, fog, blackout director, flashlight + battery.
-4. Audio ambience + footsteps.
-5. Supplies/crates, inventory, Almond Water, sanity system + effects.
-6. Exit condition + main menu / death / win screens.
-7. (Later) Entities, Level 0 prologue, Level 2.
+1. Walkable Backrooms — scaffold, generator + chunks, controller + collision, lighting/fog/textures
+2. VHS camcorder — post-processing, REC HUD, night vision + battery, title screen
+3. Escape loop — clues, notes, items, exit, sanity, win/lose screens
+4. Threats — director, Presence, Smilers, Howler
+5. Polish & ship — audio, play-on-desktop screen, performance, static deploy, trailer GIF
