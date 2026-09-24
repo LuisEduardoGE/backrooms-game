@@ -46,8 +46,9 @@ body {
 
 .debug {
   position: fixed;
-  top: 8px;
-  right: 8px;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -62,4 +63,90 @@ body {
   width: 200px;
   height: 200px;
   image-rendering: pixelated;
+}
+
+#hud {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  font-family: 'VT323', 'Courier New', monospace;
+  font-size: clamp(18px, 3.2vh, 34px);
+  color: #f4f4ec;
+  text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.6);
+  letter-spacing: 0.06em;
+}
+
+#hud[hidden] {
+  display: none;
+}
+
+.osd {
+  position: absolute;
+}
+
+.osd-tl { top: 6vh; left: 6vw; }
+.osd-tr { top: 6vh; right: 6vw; }
+.osd-bl { bottom: 6vh; left: 6vw; }
+.osd-br { bottom: 6vh; right: 6vw; }
+
+.osd-rec,
+.osd-nv {
+  display: none;
+}
+
+#hud.recording .osd-rec {
+  display: inline;
+  animation: osd-blink 1s steps(1) infinite;
+}
+
+#hud.recording .osd-pause {
+  display: none;
+}
+
+#hud.night-vision .osd-nv {
+  display: inline;
+}
+
+.osd-rec b {
+  color: #ff3b30;
+  font-weight: normal;
+}
+
+.osd-battery {
+  display: inline-flex;
+  gap: 3px;
+  padding: 3px;
+  border: 2px solid currentColor;
+  position: relative;
+}
+
+.osd-battery::after {
+  content: '';
+  position: absolute;
+  right: -7px;
+  top: 30%;
+  width: 4px;
+  height: 40%;
+  background: currentColor;
+}
+
+.osd-battery i {
+  width: 0.45em;
+  height: 0.8em;
+  background: transparent;
+}
+
+.osd-battery i.on {
+  background: currentColor;
+}
+
+.osd-battery.low {
+  color: #ff3b30;
+  animation: osd-blink 1s steps(1) infinite;
+}
+
+@keyframes osd-blink {
+  50% {
+    visibility: hidden;
+  }
 }

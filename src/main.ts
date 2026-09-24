@@ -9,6 +9,8 @@ import { createLightPool } from './lighting/lightPool';
 import { createCamcorder, toggleNightVision, updateCamcorder } from './player/camcorder';
 import { applyLook, createPlayer, NO_INPUT, updatePlayer } from './player/controller';
 import { createDebugHud } from './ui/debugHud';
+import { createHud } from './ui/hud';
+import { tapeStartTime } from './ui/osd';
 import { parseParams } from './ui/params';
 import { generateLevel } from './world/generator';
 import { cellToWorld, worldToCell } from './world/grid';
@@ -50,6 +52,10 @@ if (params.debug) console.info(`[backrooms] seed ${seed} — reload with ?debug&
 const camcorder = createCamcorder();
 const glitchSeed = deriveSeed(seed, 'glitch');
 const vhs = createVhsComposer(renderer, scene, camera, window.innerWidth, window.innerHeight);
+const hud = createHud(document.body);
+const tapeStart = tapeStartTime(seed);
+/** Seconds of footage recorded; only advances while recording. */
+let recordedSec = 0;
 
 const isLocked = () => document.pointerLockElement === canvas;
 const input = createInput(window, isLocked);
@@ -81,7 +87,10 @@ renderer.setAnimationLoop((now: number) => {
   const steps = stepper.advance(frameDt);
   for (let i = 0; i < steps; i++) {
     updatePlayer(player, stepInput, FIXED_DT, level.grid);
-    if (isLocked()) updateCamcorder(camcorder, FIXED_DT);
+    if (isLocked()) {
+      updateCamcorder(camcorder, FIXED_DT);
+      recordedSec += FIXED_DT;
+    }
   }
 
   const a = stepper.alpha();
@@ -96,6 +105,12 @@ renderer.setAnimationLoop((now: number) => {
   streamer.update(cellX, cellY);
   lightPool.update(camera.position.x, camera.position.z, now / 1000);
   debugHud?.update(frameDt, player);
+  hud.update({
+    recording: isLocked(),
+    battery: camcorder.battery,
+    nightVision: camcorder.nightVision,
+    clockMs: tapeStart + recordedSec * 1000,
+  });
   irLight.position.copy(camera.position);
   irLight.intensity = IR_INTENSITY * camcorder.nvBlend;
   const t = now / 1000;
