@@ -1,22 +1,26 @@
 import './style.css';
 import * as THREE from 'three';
-import { nextPhase, type Phase } from './core/gameState';
+import { nextPhase, type Phase, type PhaseEvent } from './core/gameState';
 import { createInput } from './core/input';
 import { createFixedStepper, FIXED_DT } from './core/loop';
 import { createRng, deriveSeed } from './core/rng';
 import { createVhsComposer } from './fx/composer';
 import { glitchAmount } from './fx/glitch';
+import { findInteractable, promptFor } from './game/interact';
+import { NOTES } from './game/notes';
+import { createSanity, drinkAlmondWater } from './game/sanity';
 import { createLightPool } from './lighting/lightPool';
-import { createCamcorder, toggleNightVision, updateCamcorder } from './player/camcorder';
+import { addBattery, createCamcorder, toggleNightVision, updateCamcorder } from './player/camcorder';
 import { applyLook, createPlayer, NO_INPUT, updatePlayer } from './player/controller';
 import { createDebugHud } from './ui/debugHud';
 import { createHud } from './ui/hud';
+import { createNoteReader } from './ui/noteReader';
 import { tapeStartTime } from './ui/osd';
 import { parseParams } from './ui/params';
 import { placeArrows, shortestPath } from './world/clues';
 import { generateLevel } from './world/generator';
 import { cellToWorld, worldToCell } from './world/grid';
-import { placeItems } from './world/items';
+import { type Item, placeItems } from './world/items';
 import { createProps } from './world/props';
 import { createChunkStreamer } from './world/streamer';
 import { createWorldMaterials } from './world/textures';
@@ -56,6 +60,10 @@ const truePath = shortestPath(level.grid, level.start, level.exit);
 const arrows = placeArrows(level.grid, truePath, createRng(deriveSeed(seed, 'clues')));
 const items = placeItems(level, truePath, createRng(deriveSeed(seed, 'items')));
 const props = createProps(scene, level, arrows, items, materials.wall.map);
+const taken = new Set<number>();
+let notesFound = 0;
+const sanity = createSanity();
+const noteReader = createNoteReader(document.body);
 const player = createPlayer({ x: cellToWorld(level.start.x), z: cellToWorld(level.start.y) }, level.startYaw);
 const debugHud = params.debug ? createDebugHud(level) : null;
 if (params.debug) console.info(`[backrooms] seed ${seed} — reload with ?debug&seed=${seed} to replay`);
@@ -73,10 +81,28 @@ const isLocked = () => document.pointerLockElement === canvas;
 const input = createInput(window, isLocked);
 
 function showPhase(): void {
-  overlay.hidden = phase === 'playing';
+  overlay.hidden = phase === 'playing' || phase === 'reading';
   titleScreen.hidden = phase !== 'title';
   pauseScreen.hidden = phase !== 'paused';
+  noteReader.setVisible(phase === 'reading');
   hud.setVisible(phase !== 'title');
+}
+
+function setPhase(event: PhaseEvent): void {
+  phase = nextPhase(phase, event);
+  showPhase();
+}
+
+function interact(item: Item): void {
+  taken.add(item.id);
+  props.hideItem(item.id);
+  if (item.kind === 'battery') addBattery(camcorder);
+  else if (item.kind === 'almondWater') drinkAlmondWater(sanity);
+  else if (item.note !== null) {
+    notesFound++;
+    noteReader.show(NOTES[item.note]);
+    setPhase('readNote');
+  }
 }
 showPhase();
 
@@ -85,9 +111,12 @@ overlay.addEventListener('click', () => {
   Promise.resolve(canvas.requestPointerLock()).catch(() => undefined);
 });
 document.addEventListener('pointerlockchange', () => {
-  phase = nextPhase(phase, isLocked() ? 'lock' : 'unlock');
   input.clear();
-  showPhase();
+  setPhase(isLocked() ? 'lock' : 'unlock');
+});
+// A click while reading puts the note down (the pointer is still locked).
+window.addEventListener('mousedown', () => {
+  if (phase === 'reading') setPhase('closeNote');
 });
 
 window.addEventListener('resize', () => {
@@ -110,6 +139,12 @@ renderer.setAnimationLoop((now: number) => {
   // Look is applied every rendered frame; movement runs in fixed steps and is interpolated below.
   const frameInput = playing ? input.moveInput() : NO_INPUT;
   if (playing && input.consumePressed('KeyN')) toggleNightVision(camcorder);
+  const target = playing ? findInteractable(items, taken, player.pos, player.yaw) : null;
+  hud.setPrompt(target ? promptFor(target.kind) : null);
+  if (input.consumePressed('KeyE')) {
+    if (phase === 'reading') setPhase('closeNote');
+    else if (target) interact(target);
+  }
   applyLook(player, frameInput.lookDX, frameInput.lookDY);
   const stepInput = { ...frameInput, lookDX: 0, lookDY: 0 };
   const steps = stepper.advance(frameDt);

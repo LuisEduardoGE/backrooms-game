@@ -19,6 +19,7 @@ export function createHud(parent: HTMLElement) {
     <div class="osd osd-tr"><span class="osd-battery"><i></i><i></i><i></i><i></i></span></div>
     <div class="osd osd-bl"><div class="osd-time"></div><div class="osd-date"></div></div>
     <div class="osd osd-br"><span class="osd-nv">NIGHT VISION</span></div>
+    <div class="osd-prompt"></div>
   `;
   parent.append(root);
 
@@ -31,12 +32,20 @@ export function createHud(parent: HTMLElement) {
   const date = el('.osd-date');
   const battery = el('.osd-battery');
   const bars = Array.from(battery.querySelectorAll('i'));
+  const prompt = el('.osd-prompt');
+  let lastPrompt: string | null = null;
   let lastTime = '';
   let lastDate = '';
 
   return {
     setVisible(visible: boolean): void {
       root.hidden = !visible;
+    },
+    setPrompt(text: string | null): void {
+      if (text === lastPrompt) return;
+      lastPrompt = text;
+      prompt.textContent = text ?? '';
+      prompt.hidden = text === null;
     },
     update(s: HudState): void {
       root.classList.toggle('recording', s.recording);
