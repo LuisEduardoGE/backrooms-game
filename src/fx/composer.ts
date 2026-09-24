@@ -3,6 +3,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { scanlinePeriod } from './scanlines';
 import { VhsShader } from './vhsShader';
 
 export interface VhsParams {
@@ -37,6 +38,7 @@ export function createVhsComposer(
     composer.setSize(w, h);
     renderer.getDrawingBufferSize(buffer);
     vhs.uniforms.uResolution.value.copy(buffer);
+    vhs.uniforms.uScanlinePeriod.value = scanlinePeriod(buffer.y);
   };
   setSize(width, height);
 

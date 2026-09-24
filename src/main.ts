@@ -28,7 +28,8 @@ const titleScreen = document.getElementById('title-screen') as HTMLDivElement;
 const pauseScreen = document.getElementById('pause-screen') as HTMLDivElement;
 
 const renderer = new THREE.WebGLRenderer({ canvas, powerPreference: 'high-performance' });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+const MAX_PIXEL_RATIO = 1.5;
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO));
 renderer.setSize(window.innerWidth, window.innerHeight);
 
 const scene = new THREE.Scene();
@@ -85,6 +86,8 @@ document.addEventListener('pointerlockchange', () => {
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
+  // Zoom or moving to another monitor changes devicePixelRatio; re-read it so the VHS pass stays pixel-aligned.
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO));
   renderer.setSize(window.innerWidth, window.innerHeight);
   vhs.setSize(window.innerWidth, window.innerHeight);
 });

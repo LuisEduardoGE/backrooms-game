@@ -11,6 +11,7 @@ export const VhsShader = {
     tDiffuse: { value: null },
     uTime: { value: 0 },
     uResolution: { value: new THREE.Vector2(1, 1) },
+    uScanlinePeriod: { value: 3 },
     uNightVision: { value: 0 },
     uBattery: { value: 1 },
     uGlitch: { value: 0 },
@@ -26,6 +27,7 @@ export const VhsShader = {
     uniform sampler2D tDiffuse;
     uniform float uTime;
     uniform vec2 uResolution;
+    uniform float uScanlinePeriod;
     uniform float uNightVision;
     uniform float uBattery;
     uniform float uGlitch;
@@ -79,8 +81,9 @@ export const VhsShader = {
       float grain = 0.06 + uNightVision * 0.10 + (1.0 - power) * 0.15;
       col += (hash(uv * uResolution + fract(t) * 100.0) - 0.5) * grain;
 
-      // Scanlines.
-      col *= 0.92 + 0.08 * sin(uv.y * uResolution.y * 3.14159);
+      // Scanlines in screen space with a whole-pixel period, so they never alias into moiré.
+      float scan = mod(gl_FragCoord.y, uScanlinePeriod) / uScanlinePeriod;
+      col *= 0.92 + 0.08 * sin(scan * 6.28318);
 
       // White streaks during glitch bursts.
       float streak = step(0.995 - uGlitch * 0.02, hash(vec2(floor(uv.y * 120.0), floor(t * 20.0))));
