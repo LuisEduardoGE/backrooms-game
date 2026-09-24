@@ -1,0 +1,45 @@
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #000;
+}
+
+#game {
+  display: block;
+  width: 100vw;
+  height: 100vh;
+}
+
+#overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  background: rgba(0, 0, 0, 0.72);
+  color: #e8e0c0;
+  font-family: 'Courier New', monospace;
+  cursor: pointer;
+  user-select: none;
+}
+
+#overlay[hidden] {
+  display: none;
+}
+
+#overlay .title {
+  font-size: 1.5rem;
+  letter-spacing: 0.3em;
+  margin: 0;
+}
+
+#overlay .hint {
+  font-size: 0.75rem;
+  letter-spacing: 0.1em;
+  opacity: 0.6;
+  margin: 0;
+}
