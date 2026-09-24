@@ -1,6 +1,8 @@
 export interface Note {
   title: string;
   body: string;
+  /** Always placed: 'start' = within reach of the spawn, 'path' = anywhere along the true path. */
+  essential?: 'start' | 'path';
 }
 
 /** Notes left by earlier wanderers. Six are placed per tape. */
@@ -11,6 +13,7 @@ export const NOTES: readonly Note[] = [
   },
   {
     title: 'Arrows',
+    essential: 'start',
     body: 'Someone painted arrows on the walls. Red, like old paint. I followed them for an hour and the rooms started to feel less the same. Trust the arrows. Mostly.',
   },
   {
@@ -31,6 +34,7 @@ export const NOTES: readonly Note[] = [
   },
   {
     title: 'The wall',
+    essential: 'path',
     body: "There's a wall out here that doesn't sit right. It shimmers, like the tape is chewed. I think you're supposed to walk into it. I'm too scared to try.",
   },
   {

@@ -19,7 +19,7 @@ export function createHud(parent: HTMLElement) {
     <div class="osd osd-tr"><span class="osd-battery"><i></i><i></i><i></i><i></i></span></div>
     <div class="osd osd-bl"><div class="osd-time"></div><div class="osd-date"></div></div>
     <div class="osd osd-br"><span class="osd-nv">NIGHT VISION</span></div>
-    <div class="osd-prompt"></div>
+    <div class="osd-prompt" hidden></div>
   `;
   parent.append(root);
 

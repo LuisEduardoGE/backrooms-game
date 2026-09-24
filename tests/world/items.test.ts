@@ -4,6 +4,7 @@ import { shortestPath } from '../../src/world/clues';
 import { generateLevel } from '../../src/world/generator';
 import { Cell, getCell } from '../../src/world/grid';
 import { ITEM_COUNTS, MIN_ITEM_SPACING, placeItems } from '../../src/world/items';
+import { NOTES } from '../../src/game/notes';
 
 for (const seed of [7, 42]) {
   describe(`placeItems (seed ${seed})`, () => {
@@ -62,3 +63,20 @@ for (const seed of [7, 42]) {
     });
   });
 }
+
+describe('essential notes', () => {
+  const arrowsNote = NOTES.findIndex((n) => n.title === 'Arrows');
+  const wallNote = NOTES.findIndex((n) => n.title === 'The wall');
+
+  it('always places the notes that explain the goal, with the arrows note near the start', () => {
+    for (const seed of [7, 42, 99, 1234, 5000]) {
+      const level = generateLevel(seed);
+      const path = shortestPath(level.grid, level.start, level.exit);
+      const notes = placeItems(level, path, createRng(seed)).filter((i) => i.kind === 'note');
+      expect(notes.map((n) => n.note)).toContain(arrowsNote);
+      expect(notes.map((n) => n.note)).toContain(wallNote);
+      const first = notes.find((n) => n.note === arrowsNote)!;
+      expect(Math.max(Math.abs(first.cell.x - level.start.x), Math.abs(first.cell.y - level.start.y))).toBeLessThanOrEqual(10);
+    }
+  });
+});

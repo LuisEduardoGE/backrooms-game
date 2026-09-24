@@ -55,6 +55,11 @@ body {
   letter-spacing: 0.15em;
 }
 
+.screen .goal {
+  font-size: 1.5rem;
+  color: #ffcf9e;
+}
+
 .screen .hint {
   font-size: 1.2rem;
   opacity: 0.75;

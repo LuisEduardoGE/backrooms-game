@@ -20,6 +20,8 @@ const NEAR_DARK_RADIUS = 3;
 /** Share of supplies drawn from dark-zone edges (the rest anywhere). */
 const NEAR_DARK_BIAS = 0.7;
 const NOTE_PATH_RADIUS = 6;
+/** The 'start' essential note lands within this many cells of the spawn. */
+const NOTE_START_RADIUS = 10;
 const MAX_TRIES = 400;
 
 /** Marks every cell within `r` (Chebyshev) of a source cell. */
@@ -49,6 +51,12 @@ export function placeItems(level: Level, path: Point[], rng: Rng): Item[] {
   const pathSet = new Set(path.map((p) => p.y * w + p.x));
   const pathBand = dilate(grid, (i) => pathSet.has(i), NOTE_PATH_RADIUS);
   const nearPath = floor.filter((i) => pathBand[i]);
+  // Near the spawn *and* on the way, so the first thing a player finds tells them what to do.
+  const nearStart = nearPath.filter((i) => {
+    const x = i % w;
+    const y = (i - x) / w;
+    return Math.max(Math.abs(x - start.x), Math.abs(y - start.y)) <= NOTE_START_RADIUS;
+  });
 
   const items: Item[] = [];
   const farEnough = (x: number, y: number) =>
@@ -66,9 +74,14 @@ export function placeItems(level: Level, path: Point[], rng: Rng): Item[] {
   };
   const supplyPool = () => (nearDark.length > 0 && rng.chance(NEAR_DARK_BIAS) ? nearDark : floor);
 
+  // Notes that explain the goal go first (so spacing never crowds them out); the rest are random.
+  const notePool = nearPath.length > 0 ? nearPath : floor;
+  const essentials = NOTES.flatMap((n, k) => (n.essential ? [k] : []));
+  for (const note of essentials) place('note', NOTES[note].essential === 'start' ? nearStart : notePool, note);
+  const others = rng.shuffle(NOTES.flatMap((n, k) => (n.essential ? [] : [k])));
+  for (const note of others.slice(0, ITEM_COUNTS.note - essentials.length)) place('note', notePool, note);
+
   for (let k = 0; k < ITEM_COUNTS.battery; k++) place('battery', supplyPool(), null);
   for (let k = 0; k < ITEM_COUNTS.almondWater; k++) place('almondWater', supplyPool(), null);
-  const noteIds = rng.shuffle(NOTES.map((_, k) => k)).slice(0, ITEM_COUNTS.note);
-  for (const note of noteIds) place('note', nearPath.length > 0 ? nearPath : floor, note);
   return items;
 }
