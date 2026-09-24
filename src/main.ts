@@ -5,6 +5,8 @@ import { createFixedStepper, FIXED_DT } from './core/loop';
 import { createRng, deriveSeed } from './core/rng';
 import { createLightPool } from './lighting/lightPool';
 import { createPlayer, NO_INPUT, updatePlayer } from './player/controller';
+import { createDebugHud } from './ui/debugHud';
+import { parseParams } from './ui/params';
 import { generateLevel } from './world/generator';
 import { cellToWorld, worldToCell } from './world/grid';
 import { createChunkStreamer } from './world/streamer';
@@ -27,12 +29,15 @@ scene.add(new THREE.HemisphereLight(0xfff2c4, 0x4a3f1c, 0.3));
 const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.05, 120);
 camera.rotation.order = 'YXZ';
 
-const seed = Math.floor(Math.random() * 0xffffffff) >>> 0;
+const params = parseParams(window.location.search);
+const seed = params.seed ?? Math.floor(Math.random() * 0xffffffff) >>> 0;
 const level = generateLevel(seed);
 const materials = createWorldMaterials(createRng(deriveSeed(seed, 'textures')));
 const streamer = createChunkStreamer(scene, level.grid, materials);
 const lightPool = createLightPool(scene, level.grid, deriveSeed(seed, 'lights'));
 const player = createPlayer({ x: cellToWorld(level.start.x), z: cellToWorld(level.start.y) });
+const debugHud = params.debug ? createDebugHud(level) : null;
+if (params.debug) console.info(`[backrooms] seed ${seed} — reload with ?debug&seed=${seed} to replay`);
 
 const isLocked = () => document.pointerLockElement === canvas;
 const input = createInput(window, isLocked);
@@ -66,5 +71,6 @@ renderer.setAnimationLoop((now: number) => {
   const cellY = worldToCell(player.pos.z);
   streamer.update(cellX, cellY);
   lightPool.update(cellX, cellY, now / 1000);
+  debugHud?.update(frameDt, player);
   renderer.render(scene, camera);
 });

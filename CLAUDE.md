@@ -46,13 +46,11 @@ docs/superpowers/plans/   implementation plans
 
 ## Commands
 
-(Fill in once scaffolded.)
-
 ```
 npm install
-npm run dev       # local dev server  (append ?debug for fps, seed, minimap, god mode)
-npm run build
-npm test
+npm run dev       # http://localhost:5173 — add ?debug for fps/seed/minimap, ?seed=123 to replay a layout
+npm test          # vitest (pure logic only)
+npm run build     # tsc type-check + vite production build to dist/
 ```
 
 ## Conventions
