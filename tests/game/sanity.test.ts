@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  ALMOND_WATER, createSanity, DARK_DRAIN, distortionFromSanity, drinkAlmondWater, isInsane, LIGHT_REGEN,
+  ALMOND_WATER, createSanity, DARK_DRAIN, distortionFromSanity, drinkAlmondWater, fearDrain, isInsane, jolt, LIGHT_REGEN,
+  NEAR_ENTITY_DRAIN, SMILER_SIGHT_DRAIN,
   NIGHT_VISION_DRAIN_FACTOR, SANITY_MAX, updateSanity,
 } from '../../src/game/sanity';
 
@@ -58,5 +59,25 @@ describe('distortionFromSanity', () => {
     expect(mid).toBeGreaterThan(0);
     expect(mid).toBeLessThan(1);
     expect(distortionFromSanity(20)).toBeGreaterThan(mid);
+  });
+});
+
+describe('fear', () => {
+  it('drains near entities and more while a Smiler is in view', () => {
+    const player = { x: 10, z: 10 };
+    expect(fearDrain([], player, false)).toBe(0);
+    expect(fearDrain([{ pos: { x: 12, z: 10 } }], player, false)).toBe(NEAR_ENTITY_DRAIN);
+    expect(fearDrain([{ pos: { x: 60, z: 10 } }], player, false)).toBe(0);
+    expect(fearDrain([{ pos: { x: 12, z: 10 } }], player, true)).toBe(NEAR_ENTITY_DRAIN + SMILER_SIGHT_DRAIN);
+  });
+
+  it('adds fear to the drain, and jolts subtract instantly without going below 0', () => {
+    const s = createSanity();
+    updateSanity(s, 1, { dark: false, nightVision: false, fear: 2 });
+    expect(s.value).toBeCloseTo(SANITY_MAX - 2 + LIGHT_REGEN, 6);
+    jolt(s, 3);
+    expect(s.value).toBeCloseTo(SANITY_MAX - 5 + LIGHT_REGEN, 6);
+    jolt(s, 500);
+    expect(s.value).toBe(0);
   });
 });
