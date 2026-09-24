@@ -1,5 +1,7 @@
 import './style.css';
 import * as THREE from 'three';
+import { createAudioEngine } from './audio/engine';
+import { footstepLevel, humLevel, maybeEcho, whisperLevel } from './audio/mix';
 import { nextPhase, type Phase, type PhaseEvent } from './core/gameState';
 import { createInput } from './core/input';
 import { createFixedStepper, FIXED_DT } from './core/loop';
@@ -17,7 +19,7 @@ import {
 } from './game/sanity';
 import { spawnHowlerCell, spawnSmilerCells } from './game/spawns';
 import { createLightPool } from './lighting/lightPool';
-import { panelGlow } from './lighting/lights';
+import { nearestLitLightsAt, panelGlow } from './lighting/lights';
 import { addBattery, createCamcorder, toggleNightVision, updateCamcorder } from './player/camcorder';
 import { applyLook, createPlayer, NO_INPUT, updatePlayer } from './player/controller';
 import { createDebugHud } from './ui/debugHud';
@@ -82,6 +84,10 @@ const taken = new Set<number>();
 let notesFound = 0;
 const sanity = createSanity();
 const noteReader = createNoteReader(document.body);
+const audio = createAudioEngine(params.debug);
+const echoRng = createRng(deriveSeed(seed, 'echoes'));
+/** Presence echoes waiting to play (performance.now() ms). */
+const pendingEchoes: { at: number; x: number; z: number }[] = [];
 const footsteps = createFootsteps();
 const directorRng = createRng(deriveSeed(seed, 'director'));
 const director = createDirector(directorRng);
@@ -150,6 +156,7 @@ function interact(item: Item): void {
 }
 
 function endTape(event: 'die' | 'escape', now: number): void {
+  audio.staticBurst();
   setPhase(event);
   endedAt = now;
   const stats = `RECORDED ${formatDuration(recordedSec)} · NOTES ${notesFound}/${ITEM_COUNTS.note}`;
@@ -164,6 +171,7 @@ function onDirectorEvent(event: DirectorEvent, now: number): void {
   } else if (event === 'spawnHowler') {
     const cell = spawnHowlerCell(level.grid, here, entityRng);
     if (cell) entities.push(createEntity(entities.length, 'howler', cell));
+    audio.howl();
     glitchUntil = Math.max(glitchUntil, now + HOWLER_WARNING_MS);
     dimUntil = now + HOWLER_WARNING_MS;
   } else if (event === 'presence') {
@@ -176,6 +184,7 @@ showPhase();
 
 overlay.addEventListener('click', () => {
   if (phase !== 'title' && phase !== 'paused') return;
+  audio.unlock();
   // Browsers refuse to re-lock for ~1 s after Esc; swallow that rejection — the next click works.
   Promise.resolve(canvas.requestPointerLock()).catch(() => undefined);
 });
@@ -190,6 +199,9 @@ document.addEventListener('pointerlockchange', () => {
   if (isLocked()) lockError.hidden = true;
   input.clear();
   setPhase(isLocked() ? 'lock' : 'unlock');
+});
+window.addEventListener('keydown', (e) => {
+  if (e.code === 'KeyM') audio.toggleMute();
 });
 // A click while reading puts the note down (the pointer is still locked).
 window.addEventListener('mousedown', () => {
@@ -215,7 +227,10 @@ renderer.setAnimationLoop((now: number) => {
 
   // Look is applied every rendered frame; movement runs in fixed steps and is interpolated below.
   const frameInput = playing ? input.moveInput() : NO_INPUT;
-  if (playing && input.consumePressed('KeyN')) toggleNightVision(camcorder);
+  if (playing && input.consumePressed('KeyN')) {
+    toggleNightVision(camcorder);
+    audio.click();
+  }
   const target = playing ? findInteractable(items, taken, player.pos, player.yaw) : null;
   hud.setPrompt(target ? promptFor(target.kind) : null);
   if (input.consumePressed('KeyE')) {
@@ -245,6 +260,11 @@ renderer.setAnimationLoop((now: number) => {
       recordedSec += FIXED_DT;
       const footstep = stepFootsteps(footsteps, FIXED_DT, player.moving, player.gait);
       const noises: NoiseEvent[] = footstep ? [{ x: player.pos.x, z: player.pos.z, radius: footstep }] : [];
+      if (footstep !== null) {
+        audio.footstep(footstepLevel(player.gait), player.gait === 'sprint');
+        const echo = maybeEcho(echoRng, footstep, player.pos, player.yaw);
+        if (echo) pendingEchoes.push({ at: now + echo.delaySec * 1000, x: echo.x, z: echo.z });
+      }
       for (const event of updateDirector(director, FIXED_DT, footstep, directorRng)) onDirectorEvent(event, now);
       for (const e of entities) {
         updateEntity(e, FIXED_DT, {
@@ -305,6 +325,23 @@ renderer.setAnimationLoop((now: number) => {
   });
   debugHud?.update(frameDt, player, entities.map((e) => e.pos));
 
+  while (pendingEchoes.length > 0 && pendingEchoes[0].at <= now) {
+    const e = pendingEchoes.shift()!;
+    audio.echoStep(e.x, e.z);
+  }
+  const nearestPanel = nearestLitLightsAt(level.grid, player.pos.x, player.pos.z, 1)[0];
+  const howler = entities.find((e) => e.kind === 'howler');
+  audio.setFrame({
+    listener: { x: camera.position.x, z: camera.position.z, yaw: player.yaw },
+    hum: humLevel(
+      nearestPanel ? Math.hypot(cellToWorld(nearestPanel.x) - player.pos.x, cellToWorld(nearestPanel.y) - player.pos.z) : null,
+      activeBlackout !== null,
+    ),
+    whisper: whisperLevel(distortionFromSanity(sanity.value)),
+    smilers: entities.filter((e) => e.kind === 'smiler').map((e) => ({ id: e.id, x: e.pos.x, z: e.pos.z })),
+    howler: howler ? { x: howler.pos.x, z: howler.pos.z, moving: howler.pos.x !== howler.prevPos.x || howler.pos.z !== howler.prevPos.z } : null,
+    paused: phase !== 'playing',
+  });
   const t = now / 1000;
   const ending = endedAt !== null && !endRevealed;
   vhs.render({
