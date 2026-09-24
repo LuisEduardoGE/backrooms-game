@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { createInput } from './core/input';
 import { createFixedStepper, FIXED_DT } from './core/loop';
 import { createRng, deriveSeed } from './core/rng';
+import { createLightPool } from './lighting/lightPool';
 import { createPlayer, NO_INPUT, updatePlayer } from './player/controller';
 import { generateLevel } from './world/generator';
 import { cellToWorld, worldToCell } from './world/grid';
@@ -21,7 +22,7 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(FOG_COLOR);
 scene.fog = new THREE.FogExp2(FOG_COLOR, 0.06);
-scene.add(new THREE.HemisphereLight(0xfff2c4, 0x4a3f1c, 0.6));
+scene.add(new THREE.HemisphereLight(0xfff2c4, 0x4a3f1c, 0.3));
 
 const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.05, 120);
 camera.rotation.order = 'YXZ';
@@ -30,6 +31,7 @@ const seed = Math.floor(Math.random() * 0xffffffff) >>> 0;
 const level = generateLevel(seed);
 const materials = createWorldMaterials(createRng(deriveSeed(seed, 'textures')));
 const streamer = createChunkStreamer(scene, level.grid, materials);
+const lightPool = createLightPool(scene, level.grid, deriveSeed(seed, 'lights'));
 const player = createPlayer({ x: cellToWorld(level.start.x), z: cellToWorld(level.start.y) });
 
 const isLocked = () => document.pointerLockElement === canvas;
@@ -60,6 +62,9 @@ renderer.setAnimationLoop((now: number) => {
 
   camera.position.set(player.pos.x, player.eyeHeight, player.pos.z);
   camera.rotation.set(player.pitch, player.yaw, 0);
-  streamer.update(worldToCell(player.pos.x), worldToCell(player.pos.z));
+  const cellX = worldToCell(player.pos.x);
+  const cellY = worldToCell(player.pos.z);
+  streamer.update(cellX, cellY);
+  lightPool.update(cellX, cellY, now / 1000);
   renderer.render(scene, camera);
 });
