@@ -51,6 +51,7 @@ npm install
 npm run dev       # http://localhost:5173 — add ?debug for fps/seed/minimap, ?seed=123 to replay a layout
 npm test          # vitest (pure logic only)
 npm run build     # tsc type-check + vite production build to dist/
+npm run trailer   # re-record public/trailer.gif from ?attract footage (Chrome + ffmpeg)
 ```
 
 ## Conventions
@@ -67,8 +68,10 @@ npm run build     # tsc type-check + vite production build to dist/
 
 ## Milestones
 
-1. Walkable Backrooms — scaffold, generator + chunks, controller + collision, lighting/fog/textures
-2. VHS camcorder — post-processing, REC HUD, night vision + battery, title screen
-3. Escape loop — clues, notes, items, exit, sanity, win/lose screens
-4. Threats — director, Presence, Smilers, Howler
-5. Polish & ship — audio, play-on-desktop screen, performance, static deploy, trailer GIF
+1. Walkable Backrooms — scaffold, generator + chunks, controller + collision, lighting/fog/textures — done
+2. VHS camcorder — post-processing, REC HUD, night vision + battery, title screen — done
+3. Escape loop — clues, notes, items, exit, sanity, win/lose screens — done
+4. Threats — director, Presence, Smilers, Howler — done
+5. Polish & ship — audio, play-on-desktop screen, performance, deploy-ready build, trailer GIF — done
+
+Next: Level 1 (Habitable Zone) — see the escape screen teaser. Each milestone has a plan in `docs/superpowers/plans/`.
