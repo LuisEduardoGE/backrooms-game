@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_GEN, generateLevel } from '../../src/world/generator';
-import { Cell, getCell, isDark } from '../../src/world/grid';
+import { Cell, DIR_STEP, getCell, isDark } from '../../src/world/grid';
 import { bfsDistances } from '../../src/world/pathing';
 
 describe('generateLevel', () => {
@@ -111,6 +111,15 @@ describe('generateLevel', () => {
       }
       expect(regions).toBeGreaterThanOrEqual(1);
       expect(regions).toBeLessThanOrEqual(8);
+    }
+  });
+
+  it('never puts the exit in a doorway and records which wall is the noclip wall', () => {
+    for (let seed = 3000; seed < 3025; seed++) {
+      const { grid, exit, exitSide } = generateLevel(seed);
+      expect(grid.room[exit.y * grid.width + exit.x]).toBeGreaterThanOrEqual(0);
+      const step = DIR_STEP[exitSide];
+      expect(getCell(grid, exit.x + step.x, exit.y + step.y)).toBe(Cell.Wall);
     }
   });
 });

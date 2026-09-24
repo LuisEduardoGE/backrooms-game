@@ -61,3 +61,15 @@ export function cellToWorld(cell: number): number {
 export function worldToCell(metres: number): number {
   return Math.floor(metres / CELL_SIZE);
 }
+
+export type Dir = 'N' | 'E' | 'S' | 'W';
+
+/** Grid step per compass direction: N = −y (world −Z), E = +x, S = +y, W = −x. */
+export const DIR_STEP: Record<Dir, Point> = {
+  N: { x: 0, y: -1 },
+  E: { x: 1, y: 0 },
+  S: { x: 0, y: 1 },
+  W: { x: -1, y: 0 },
+};
+
+export const DIRS: readonly Dir[] = ['N', 'E', 'S', 'W'];

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Cell, CELL_SIZE, cellToWorld, createGrid, getCell, inBounds, isDark, isSolid, setCell, worldToCell } from '../../src/world/grid';
+import { Cell, CELL_SIZE, cellToWorld, createGrid, DIR_STEP, DIRS, getCell, inBounds, isDark, isSolid, setCell, worldToCell } from '../../src/world/grid';
 
 describe('grid', () => {
   it('starts as all walls, not dark, no rooms', () => {
@@ -39,5 +39,15 @@ describe('grid', () => {
     expect(worldToCell(7)).toBe(3);
     expect(worldToCell(5.999)).toBe(2);
     expect(worldToCell(-0.1)).toBe(-1);
+  });
+});
+
+describe('directions', () => {
+  it('maps compass directions to grid steps (N = −y)', () => {
+    expect(DIRS).toEqual(['N', 'E', 'S', 'W']);
+    expect(DIR_STEP.N).toEqual({ x: 0, y: -1 });
+    expect(DIR_STEP.E).toEqual({ x: 1, y: 0 });
+    expect(DIR_STEP.S).toEqual({ x: 0, y: 1 });
+    expect(DIR_STEP.W).toEqual({ x: -1, y: 0 });
   });
 });

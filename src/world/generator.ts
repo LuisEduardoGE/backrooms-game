@@ -1,5 +1,6 @@
 import { createRng, deriveSeed, type Rng } from '../core/rng';
-import { Cell, createGrid, type Grid, getCell, type Point, setCell } from './grid';
+import { exitWallSide } from './exit';
+import { Cell, createGrid, type Dir, type Grid, getCell, type Point, setCell } from './grid';
 import { bfsDistances } from './pathing';
 
 export interface Room {
@@ -206,6 +207,8 @@ export interface Level {
   /** Camera yaw at spawn, facing the longest open run of floor (yaw 0 looks toward −y). */
   startYaw: number;
   exit: Point;
+  /** Which wall of the exit cell is the noclip wall. */
+  exitSide: Dir;
 }
 
 export const MAX_GEN_ATTEMPTS = 20;
@@ -229,7 +232,7 @@ function tryGenerate(layoutSeed: number, o: GenOptions): Omit<Level, 'seed'> | n
   const start = pickFloorCell(grid, startRoom, rng);
   assignDarkZones(grid, rooms, startRoom.id, rng, o.darkFraction);
   const exit = pickExit(grid, start, rng, o);
-  return exit ? { grid, rooms, start, startYaw: pickStartYaw(grid, start), exit } : null;
+  return exit ? { grid, rooms, start, startYaw: pickStartYaw(grid, start), exit, exitSide: exitWallSide(grid, exit) } : null;
 }
 
 /** Start near a random corner so the far side of the map is available for the exit. */
@@ -385,7 +388,8 @@ function pickExit(grid: Grid, start: Point, rng: Rng, o: GenOptions): Point | nu
   for (let y = 0; y < grid.height; y++) {
     for (let x = 0; x < grid.width; x++) {
       const i = y * grid.width + x;
-      if (grid.cells[i] !== Cell.Floor || dist[i] < 0 || grid.dark[i]) continue;
+      // room < 0 = doorway: a noclip wall there would sit in a door gap.
+      if (grid.cells[i] !== Cell.Floor || grid.room[i] < 0 || dist[i] < 0 || grid.dark[i]) continue;
       if (Math.hypot(x - start.x, y - start.y) < minDistance) continue;
       if (!hasAdjacentWall(grid, x, y)) continue;
       candidates.push({ x, y });
