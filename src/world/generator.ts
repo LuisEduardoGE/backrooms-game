@@ -278,15 +278,61 @@ function pickFloorCell(grid: Grid, room: Room, rng: Rng): Point {
   return rng.pick(cells);
 }
 
-/** Switches off whole rooms (never the start room) until the dark fraction is reached. */
+/** Number of rooms dark zones grow from; regions may merge, so a level has at most this many (barring dead ends). */
+export const DARK_REGION_SEEDS = 5;
+
+interface DoorLink {
+  /** Cell index of the doorway. */
+  i: number;
+  a: number;
+  b: number;
+}
+
+/** Every carved doorway with the two rooms it joins. */
+function doorLinks(grid: Grid): DoorLink[] {
+  const links: DoorLink[] = [];
+  const roomAt = (x: number, y: number) => (getCell(grid, x, y) === Cell.Floor ? grid.room[y * grid.width + x] : -1);
+  for (let y = 1; y < grid.height - 1; y++) {
+    for (let x = 1; x < grid.width - 1; x++) {
+      const i = y * grid.width + x;
+      if (grid.cells[i] !== Cell.Floor || grid.room[i] !== -1) continue;
+      const l = roomAt(x - 1, y);
+      const r = roomAt(x + 1, y);
+      if (l >= 0 && r >= 0) links.push({ i, a: l, b: r });
+      else {
+        const u = roomAt(x, y - 1);
+        const d = roomAt(x, y + 1);
+        if (u >= 0 && d >= 0) links.push({ i, a: u, b: d });
+      }
+    }
+  }
+  return links;
+}
+
+/**
+ * Switches off whole rooms (never the start room) until the dark fraction is reached, growing
+ * contiguous regions outward through doorways from a few seed rooms. Doorways between two dark
+ * rooms go dark too, so each region is one walkable unpowered area.
+ */
 function assignDarkZones(grid: Grid, rooms: Room[], startRoomId: number, rng: Rng, fraction: number): void {
   let floor = 0;
   for (let i = 0; i < grid.cells.length; i++) if (grid.cells[i] === Cell.Floor) floor++;
   const target = floor * fraction;
 
+  const links = doorLinks(grid);
+  const neighbours: number[][] = rooms.map(() => []);
+  for (const { a, b } of links) {
+    neighbours[a].push(b);
+    neighbours[b].push(a);
+  }
+
+  const isDarkRoom = new Uint8Array(rooms.length);
+  const darkRooms: number[] = [];
   let dark = 0;
-  for (const r of rng.shuffle(rooms.filter((room) => room.id !== startRoomId))) {
-    if (dark >= target) break;
+  const darken = (id: number) => {
+    isDarkRoom[id] = 1;
+    darkRooms.push(id);
+    const r = rooms[id];
     for (let y = r.y; y < r.y + r.h; y++) {
       for (let x = r.x; x < r.x + r.w; x++) {
         const i = y * grid.width + x;
@@ -294,7 +340,32 @@ function assignDarkZones(grid: Grid, rooms: Room[], startRoomId: number, rng: Rn
         if (grid.cells[i] === Cell.Floor) dark++;
       }
     }
+  };
+
+  const seeds = rng.shuffle(rooms.filter((r) => r.id !== startRoomId).map((r) => r.id));
+  let nextSeed = 0;
+  const addSeed = (): boolean => {
+    while (nextSeed < seeds.length) {
+      const id = seeds[nextSeed++];
+      if (!isDarkRoom[id]) {
+        darken(id);
+        return true;
+      }
+    }
+    return false;
+  };
+
+  for (let k = 0; k < DARK_REGION_SEEDS && dark < target; k++) addSeed();
+  while (dark < target) {
+    const options: number[] = [];
+    for (const id of darkRooms) {
+      for (const n of neighbours[id]) if (!isDarkRoom[n] && n !== startRoomId) options.push(n);
+    }
+    if (options.length > 0) darken(rng.pick(options));
+    else if (!addSeed()) break;
   }
+
+  for (const { i, a, b } of links) if (isDarkRoom[a] && isDarkRoom[b]) grid.dark[i] = 1;
 }
 
 function hasAdjacentWall(grid: Grid, x: number, y: number): boolean {

@@ -85,4 +85,32 @@ describe('generateLevel', () => {
       }
     }
   });
+
+  it('groups dark rooms into a few connected regions (spec §5: contiguous dark zones)', () => {
+    for (const seed of [7, 42, 1234]) {
+      const { grid } = generateLevel(seed);
+      const seen = new Uint8Array(grid.cells.length);
+      let regions = 0;
+      for (let i = 0; i < grid.cells.length; i++) {
+        if (!grid.dark[i] || seen[i]) continue;
+        regions++;
+        const stack = [i];
+        seen[i] = 1;
+        while (stack.length > 0) {
+          const c = stack.pop()!;
+          const x = c % grid.width;
+          const y = (c - x) / grid.width;
+          for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+            const n = (y + dy) * grid.width + (x + dx);
+            if (grid.dark[n] && !seen[n]) {
+              seen[n] = 1;
+              stack.push(n);
+            }
+          }
+        }
+      }
+      expect(regions).toBeGreaterThanOrEqual(1);
+      expect(regions).toBeLessThanOrEqual(8);
+    }
+  });
 });
