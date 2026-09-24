@@ -281,7 +281,7 @@ renderer.setAnimationLoop((now: number) => {
       const noises: NoiseEvent[] = footstep ? [{ x: player.pos.x, z: player.pos.z, radius: footstep }] : [];
       if (footstep !== null) {
         audio.footstep(footstepLevel(player.gait), player.gait === 'sprint');
-        const echo = maybeEcho(echoRng, footstep, player.pos, player.yaw);
+        const echo = maybeEcho(echoRng, footstep, player.pos, player.yaw, distortionFromSanity(sanity.value));
         if (echo) pendingEchoes.push({ at: now + echo.delaySec * 1000, x: echo.x, z: echo.z });
       }
       for (const event of updateDirector(director, FIXED_DT, footstep, directorRng)) onDirectorEvent(event, recordedSec * 1000);
@@ -352,7 +352,8 @@ renderer.setAnimationLoop((now: number) => {
   }
   const nearestPanel = nearestLitLightsAt(level.grid, player.pos.x, player.pos.z, 1)[0];
   const howler = entities.find((e) => e.kind === 'howler');
-  audio.setFrame({
+  try {
+    audio.setFrame({
     listener: { x: camera.position.x, z: camera.position.z, yaw: player.yaw },
     hum: humLevel(
       nearestPanel ? Math.hypot(cellToWorld(nearestPanel.x) - player.pos.x, cellToWorld(nearestPanel.y) - player.pos.z) : null,
@@ -362,7 +363,11 @@ renderer.setAnimationLoop((now: number) => {
     smilers: entities.filter((e) => e.kind === 'smiler').map((e) => ({ id: e.id, x: e.pos.x, z: e.pos.z })),
     howler: howler ? { x: howler.pos.x, z: howler.pos.z, moving: howler.pos.x !== howler.prevPos.x || howler.pos.z !== howler.prevPos.z } : null,
     paused: phase !== 'playing',
-  });
+    });
+  } catch (err) {
+    // Audio is garnish: a browser quirk here must never freeze the picture.
+    if (params.debug) console.warn('[backrooms] audio frame failed', err);
+  }
   const t = now / 1000;
   const ending = endedAt !== null && !endRevealed;
   vhs.render({

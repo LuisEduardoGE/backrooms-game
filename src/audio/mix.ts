@@ -28,7 +28,8 @@ export function whisperLevel(distortion: number): number {
   return WHISPER_MAX * Math.min(1, (distortion - WHISPER_START) / (1 - WHISPER_START));
 }
 
-export const ECHO_CHANCE = 0.25;
+/** Phantom-footstep chance per audible step: rare while sane, frequent near collapse (spec §6). */
+export const ECHO_CHANCE = { sane: 0.05, insane: 0.35 } as const;
 
 export interface Echo {
   delaySec: number;
@@ -36,10 +37,17 @@ export interface Echo {
   z: number;
 }
 
-/** The Presence: sometimes a footstep is answered from behind, a moment later. */
-export function maybeEcho(rng: Rng, footstepRadius: number, pos: { x: number; z: number }, yaw: number): Echo | null {
+/** The Presence: sometimes a footstep is answered from behind, a moment later — more often as sanity goes. */
+export function maybeEcho(
+  rng: Rng,
+  footstepRadius: number,
+  pos: { x: number; z: number },
+  yaw: number,
+  distortion: number,
+): Echo | null {
   if (footstepRadius <= 0) return null;
-  if (!rng.chance(ECHO_CHANCE)) return null;
+  const chance = ECHO_CHANCE.sane + (ECHO_CHANCE.insane - ECHO_CHANCE.sane) * Math.min(1, Math.max(0, distortion));
+  if (!rng.chance(chance)) return null;
   const dist = rng.range(6, 10);
   const spread = rng.range(-0.5, 0.5);
   // Behind = opposite of forward (−sin yaw, −cos yaw), with a little sideways spread.

@@ -31,14 +31,24 @@ describe('footstepLevel / whisperLevel', () => {
 describe('maybeEcho', () => {
   it('never echoes a silent step', () => {
     const rng = createRng(1);
-    for (let i = 0; i < 200; i++) expect(maybeEcho(rng, 0, { x: 0, z: 0 }, 0)).toBeNull();
+    for (let i = 0; i < 200; i++) expect(maybeEcho(rng, 0, { x: 0, z: 0 }, 0, 1)).toBeNull();
   });
 
-  it('echoes roughly a quarter of audible steps, shortly after, from behind', () => {
+  it('echoes rarely while sane and far more as sanity collapses (spec §6: sanity drives phantom footsteps)', () => {
+    const rate = (distortion: number) => {
+      const rng = createRng(4);
+      return Array.from({ length: 4000 }, () => maybeEcho(rng, 6, { x: 0, z: 0 }, 0, distortion)).filter((e) => e !== null).length / 4000;
+    };
+    expect(rate(0)).toBeGreaterThan(ECHO_CHANCE.sane - 0.02);
+    expect(rate(0)).toBeLessThan(ECHO_CHANCE.sane + 0.02);
+    expect(rate(1)).toBeGreaterThan(ECHO_CHANCE.insane - 0.04);
+    expect(rate(1)).toBeLessThan(ECHO_CHANCE.insane + 0.04);
+  });
+
+  it('places echoes shortly after, from behind', () => {
     const rng = createRng(2);
-    const echoes = Array.from({ length: 2000 }, () => maybeEcho(rng, 6, { x: 10, z: 10 }, 0)).filter((e) => e !== null);
-    expect(echoes.length / 2000).toBeGreaterThan(ECHO_CHANCE - 0.05);
-    expect(echoes.length / 2000).toBeLessThan(ECHO_CHANCE + 0.05);
+    const echoes = Array.from({ length: 2000 }, () => maybeEcho(rng, 6, { x: 10, z: 10 }, 0, 1)).filter((e) => e !== null);
+    expect(echoes.length).toBeGreaterThan(0);
     for (const e of echoes) {
       expect(e!.delaySec).toBeGreaterThanOrEqual(0.3);
       expect(e!.delaySec).toBeLessThanOrEqual(0.5);

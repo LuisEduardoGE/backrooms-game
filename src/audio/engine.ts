@@ -1,3 +1,5 @@
+import { placeListener } from './listener';
+
 /** Every sound is synthesized here; nothing is loaded. Levels come from src/audio/mix.ts. */
 export interface AudioFrame {
   listener: { x: number; z: number; yaw: number };
@@ -128,6 +130,12 @@ export function createAudioEngine(debug: boolean): AudioEngine {
       src.start();
       lfo.start();
     }
+    // A hidden tab stops running frames, so the 'paused' mix never arrives — silence it directly.
+    document.addEventListener('visibilitychange', () => {
+      if (!ctx) return;
+      if (document.hidden) void ctx.suspend();
+      else void ctx.resume();
+    });
     if (debug) console.info('[backrooms] audio', ctx.state);
   }
 
@@ -166,16 +174,7 @@ export function createAudioEngine(debug: boolean): AudioEngine {
     setFrame(f) {
       if (!ctx) return;
       const t = ctx.currentTime;
-      const L = ctx.listener;
-      L.positionX.value = f.listener.x;
-      L.positionY.value = EAR_HEIGHT;
-      L.positionZ.value = f.listener.z;
-      L.forwardX.value = -Math.sin(f.listener.yaw);
-      L.forwardY.value = 0;
-      L.forwardZ.value = -Math.cos(f.listener.yaw);
-      L.upX.value = 0;
-      L.upY.value = 1;
-      L.upZ.value = 0;
+      placeListener(ctx.listener, f.listener.x, EAR_HEIGHT, f.listener.z, f.listener.yaw);
       const quiet = f.paused ? 0.25 : 1;
       humGain.gain.setTargetAtTime(Math.min(1, f.hum * quiet), t, SMOOTH);
       whisperGain.gain.setTargetAtTime(f.paused ? 0 : Math.min(1, f.whisper), t, SMOOTH * 4);
@@ -183,6 +182,7 @@ export function createAudioEngine(debug: boolean): AudioEngine {
         const v = smilerVoice(s.id, s.x, s.z);
         v.panner.positionX.setTargetAtTime(s.x, t, SMOOTH);
         v.panner.positionZ.setTargetAtTime(s.z, t, SMOOTH);
+        v.gain.gain.setTargetAtTime(0.05 * (f.paused ? 0 : 1), t, SMOOTH);
       }
       if (f.howler && f.howler.moving && !f.paused && t >= howlerNextStep) {
         howlerNextStep = t + 0.55;
