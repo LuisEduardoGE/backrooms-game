@@ -232,3 +232,39 @@ body {
   color: #f4f4ec;
   opacity: 0.8;
 }
+
+.screen .actions {
+  display: flex;
+  gap: 1.2rem;
+  margin-top: 1.2rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.screen button {
+  font: inherit;
+  font-size: 1.6rem;
+  color: #f4f4ec;
+  background: rgba(0, 0, 0, 0.4);
+  border: 2px solid currentColor;
+  padding: 0.2em 0.9em;
+  cursor: pointer;
+}
+
+.screen button:hover,
+.screen button:focus-visible {
+  background: #f4f4ec;
+  color: #000;
+}
+
+.lock-error {
+  position: absolute;
+  bottom: 12vh;
+  margin: 0;
+  font-size: 1.2rem;
+  color: #ffb4a8;
+}
+
+.lock-error[hidden] {
+  display: none;
+}

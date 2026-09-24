@@ -8,19 +8,19 @@ import { createVhsComposer } from './fx/composer';
 import { glitchAmount } from './fx/glitch';
 import { findInteractable, promptFor } from './game/interact';
 import { NOTES } from './game/notes';
-import { createSanity, drinkAlmondWater } from './game/sanity';
+import { createSanity, distortionFromSanity, drinkAlmondWater, isInsane, updateSanity } from './game/sanity';
 import { createLightPool } from './lighting/lightPool';
 import { addBattery, createCamcorder, toggleNightVision, updateCamcorder } from './player/camcorder';
 import { applyLook, createPlayer, NO_INPUT, updatePlayer } from './player/controller';
 import { createDebugHud } from './ui/debugHud';
 import { createHud } from './ui/hud';
 import { createNoteReader } from './ui/noteReader';
-import { tapeStartTime } from './ui/osd';
-import { parseParams } from './ui/params';
+import { formatDuration, tapeStartTime } from './ui/osd';
+import { parseParams, tapeUrl } from './ui/params';
 import { placeArrows, shortestPath } from './world/clues';
 import { generateLevel } from './world/generator';
-import { cellToWorld, worldToCell } from './world/grid';
-import { type Item, placeItems } from './world/items';
+import { cellToWorld, isDark, worldToCell } from './world/grid';
+import { ITEM_COUNTS, type Item, placeItems } from './world/items';
 import { createProps } from './world/props';
 import { createChunkStreamer } from './world/streamer';
 import { createWorldMaterials } from './world/textures';
@@ -33,6 +33,10 @@ const canvas = document.getElementById('game') as HTMLCanvasElement;
 const overlay = document.getElementById('overlay') as HTMLDivElement;
 const titleScreen = document.getElementById('title-screen') as HTMLDivElement;
 const pauseScreen = document.getElementById('pause-screen') as HTMLDivElement;
+const endScreen = document.getElementById('end-screen') as HTMLDivElement;
+const lockError = document.getElementById('lock-error') as HTMLParagraphElement;
+/** Seconds of glitching before an end screen appears. */
+const END_REVEAL_SEC = 1.0;
 
 const renderer = new THREE.WebGLRenderer({ canvas, powerPreference: 'high-performance' });
 const MAX_PIXEL_RATIO = 1.5;
@@ -64,6 +68,9 @@ const taken = new Set<number>();
 let notesFound = 0;
 const sanity = createSanity();
 const noteReader = createNoteReader(document.body);
+/** performance.now() when the tape ended or escaped; null while the tape is running. */
+let endedAt: number | null = null;
+let endRevealed = false;
 const player = createPlayer({ x: cellToWorld(level.start.x), z: cellToWorld(level.start.y) }, level.startYaw);
 const debugHud = params.debug ? createDebugHud(level) : null;
 if (params.debug) console.info(`[backrooms] seed ${seed} — reload with ?debug&seed=${seed} to replay`);
@@ -81,11 +88,13 @@ const isLocked = () => document.pointerLockElement === canvas;
 const input = createInput(window, isLocked);
 
 function showPhase(): void {
-  overlay.hidden = phase === 'playing' || phase === 'reading';
+  const over = phase === 'ended' || phase === 'escaped';
+  overlay.hidden = phase === 'playing' || phase === 'reading' || (over && !endRevealed);
   titleScreen.hidden = phase !== 'title';
   pauseScreen.hidden = phase !== 'paused';
+  endScreen.hidden = !(phase === 'ended' && endRevealed);
   noteReader.setVisible(phase === 'reading');
-  hud.setVisible(phase !== 'title');
+  hud.setVisible(phase !== 'title' && !(over && endRevealed));
 }
 
 function setPhase(event: PhaseEvent): void {
@@ -104,13 +113,30 @@ function interact(item: Item): void {
     setPhase('readNote');
   }
 }
+
+function endTape(event: 'die' | 'escape', now: number): void {
+  setPhase(event);
+  endedAt = now;
+  const stats = `RECORDED ${formatDuration(recordedSec)} · NOTES ${notesFound}/${ITEM_COUNTS.note}`;
+  for (const el of document.querySelectorAll<HTMLElement>('.stats')) el.textContent = stats;
+  document.exitPointerLock();
+}
 showPhase();
 
 overlay.addEventListener('click', () => {
+  if (phase !== 'title' && phase !== 'paused') return;
   // Browsers refuse to re-lock for ~1 s after Esc; swallow that rejection — the next click works.
   Promise.resolve(canvas.requestPointerLock()).catch(() => undefined);
 });
+document.addEventListener('pointerlockerror', () => {
+  lockError.hidden = false;
+});
+document.getElementById('retry-tape')?.addEventListener('click', () => location.assign(tapeUrl(location.href, seed)));
+for (const button of document.querySelectorAll('.new-tape')) {
+  button.addEventListener('click', () => location.assign(tapeUrl(location.href, null)));
+}
 document.addEventListener('pointerlockchange', () => {
+  if (isLocked()) lockError.hidden = true;
   input.clear();
   setPhase(isLocked() ? 'lock' : 'unlock');
 });
@@ -154,7 +180,16 @@ renderer.setAnimationLoop((now: number) => {
     if (playing) {
       updateCamcorder(camcorder, FIXED_DT);
       recordedSec += FIXED_DT;
+      if (!params.god) {
+        const dark = isDark(level.grid, worldToCell(player.pos.x), worldToCell(player.pos.z));
+        updateSanity(sanity, FIXED_DT, { dark, nightVision: camcorder.nightVision });
+      }
     }
+  }
+  if (phase === 'playing' && isInsane(sanity)) endTape('die', now);
+  if (endedAt !== null && !endRevealed && (now - endedAt) / 1000 >= END_REVEAL_SEC) {
+    endRevealed = true;
+    showPhase();
   }
 
   const a = stepper.alpha();
@@ -181,10 +216,12 @@ renderer.setAnimationLoop((now: number) => {
   debugHud?.update(frameDt, player);
 
   const t = now / 1000;
+  const ending = endedAt !== null && !endRevealed;
   vhs.render({
     time: t,
     nightVision: camcorder.nvBlend,
     battery: camcorder.battery / 100,
-    glitch: glitchAmount(t, glitchSeed, camcorder.battery),
+    glitch: ending ? 1 : glitchAmount(t, glitchSeed, camcorder.battery),
+    distortion: ending ? 1 : distortionFromSanity(sanity.value),
   });
 });

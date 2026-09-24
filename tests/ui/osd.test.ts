@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { batteryBars, formatOsdDate, formatOsdTime, tapeStartTime } from '../../src/ui/osd';
+import { batteryBars, formatDuration, formatOsdDate, formatOsdTime, tapeStartTime } from '../../src/ui/osd';
 
 describe('tapeStartTime', () => {
   it('is a deterministic whole-second moment in 1996', () => {
@@ -34,5 +34,13 @@ describe('batteryBars', () => {
     expect(batteryBars(1)).toBe(1);
     expect(batteryBars(0)).toBe(0);
     expect(batteryBars(-5)).toBe(0);
+  });
+});
+
+describe('formatDuration', () => {
+  it('formats recorded time as MM:SS', () => {
+    expect(formatDuration(0)).toBe('00:00');
+    expect(formatDuration(65.9)).toBe('01:05');
+    expect(formatDuration(3600 + 125)).toBe('62:05');
   });
 });

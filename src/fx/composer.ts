@@ -14,6 +14,8 @@ export interface VhsParams {
   battery: number;
   /** 0..1 tape-glitch intensity. */
   glitch: number;
+  /** 0..1 sanity distortion. */
+  distortion: number;
 }
 
 /**
@@ -49,6 +51,7 @@ export function createVhsComposer(
       vhs.uniforms.uNightVision.value = p.nightVision;
       vhs.uniforms.uBattery.value = p.battery;
       vhs.uniforms.uGlitch.value = p.glitch;
+      vhs.uniforms.uDistortion.value = p.distortion;
       composer.render();
     },
   };

@@ -15,6 +15,7 @@ export const VhsShader = {
     uNightVision: { value: 0 },
     uBattery: { value: 1 },
     uGlitch: { value: 0 },
+    uDistortion: { value: 0 },
   },
   vertexShader: /* glsl */ `
     varying vec2 vUv;
@@ -31,6 +32,7 @@ export const VhsShader = {
     uniform float uNightVision;
     uniform float uBattery;
     uniform float uGlitch;
+    uniform float uDistortion;
     varying vec2 vUv;
 
     float hash(vec2 p) {
@@ -52,6 +54,9 @@ export const VhsShader = {
       }
       float t = fract(uTime / 1000.0) * 1000.0;
 
+      // Sanity: the picture swims.
+      uv += vec2(sin(uv.y * 18.0 + t * 2.3), cos(uv.x * 14.0 + t * 1.7)) * 0.006 * uDistortion;
+
       // Tracking: per-row jitter plus a slow rolling band; both grow during glitches.
       float row = floor(uv.y * 240.0);
       float jitter = hash(vec2(row, floor(t * 30.0))) - 0.5;
@@ -60,7 +65,7 @@ export const VhsShader = {
       uv.x += jitter * (0.0015 + uGlitch * 0.03) + band * (0.003 + uGlitch * 0.02);
 
       // Chroma bleed and horizontal smear (VHS has little colour bandwidth).
-      float bleed = 0.0025 + uGlitch * 0.006;
+      float bleed = 0.0025 + uGlitch * 0.006 + uDistortion * 0.008;
       vec3 col = vec3(
         texture2D(tDiffuse, uv + vec2(bleed, 0.0)).r,
         texture2D(tDiffuse, uv).g,
@@ -78,7 +83,7 @@ export const VhsShader = {
       col *= mix(0.35, 1.0, power);
 
       // Grain — heavier in night vision and on a dead battery.
-      float grain = 0.06 + uNightVision * 0.10 + (1.0 - power) * 0.15;
+      float grain = 0.06 + uNightVision * 0.10 + (1.0 - power) * 0.15 + uDistortion * 0.12;
       col += (hash(uv * uResolution + fract(t) * 100.0) - 0.5) * grain;
 
       // Scanlines in screen space with a whole-pixel period, so they never alias into moiré.
@@ -90,7 +95,7 @@ export const VhsShader = {
       col = mix(col, vec3(hash(uv + fract(t))), streak * uGlitch);
 
       // Vignette.
-      col *= 1.0 - smoothstep(0.35, 0.85, length(vUv - 0.5));
+      col *= 1.0 - smoothstep(0.35 - 0.15 * uDistortion, 0.85 - 0.25 * uDistortion, length(vUv - 0.5));
 
       gl_FragColor = vec4(col, 1.0);
     }

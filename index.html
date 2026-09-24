@@ -14,13 +14,22 @@
       <div id="title-screen" class="screen">
         <p class="brand">LEVEL 0</p>
         <p class="title">▶ PLAY TAPE</p>
-        <p class="hint">WASD move · Mouse look · Shift sprint · C crouch · N night vision · Esc pause</p>
+        <p class="hint">Click to start · WASD move · Mouse look · Shift sprint · C crouch · E use · N night vision · Esc pause</p>
         <p class="warning">⚠ Contains flickering lights and flashing effects.</p>
       </div>
       <div id="pause-screen" class="screen" hidden>
         <p class="title">▮▮ PAUSE</p>
         <p class="hint">Click to resume</p>
       </div>
+      <div id="end-screen" class="screen" hidden>
+        <p class="title">TAPE ENDS</p>
+        <p class="hint stats"></p>
+        <div class="actions">
+          <button type="button" id="retry-tape">↺ RETRY TAPE</button>
+          <button type="button" class="new-tape">⏏ NEW TAPE</button>
+        </div>
+      </div>
+      <p id="lock-error" class="lock-error" hidden>Couldn't capture the mouse — click again.</p>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
