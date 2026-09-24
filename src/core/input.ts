@@ -17,6 +17,8 @@ export interface Input {
   /** Current movement intent; consumes mouse movement accumulated since the last call. */
   moveInput(sensitivity?: number): MoveInput;
   clear(): void;
+  /** Discards mouse movement and key presses built up since the last read; held keys stay held. */
+  flush(): void;
   dispose(): void;
 }
 
@@ -73,6 +75,11 @@ export function createInput(target: EventTarget, isLocked: () => boolean): Input
       return input;
     },
     clear,
+    flush() {
+      lookX = 0;
+      lookY = 0;
+      pressed.clear();
+    },
     dispose() {
       for (const [type, fn] of listeners) target.removeEventListener(type, fn);
     },

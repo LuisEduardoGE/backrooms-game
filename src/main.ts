@@ -176,6 +176,8 @@ renderer.setAnimationLoop((now: number) => {
     if (phase === 'reading') setPhase('closeNote');
     else if (target) interact(target);
   }
+  // Reading keeps the pointer locked; don't let mouse moves or N presses pile up and fire on close.
+  if (phase === 'reading') input.flush();
   applyLook(player, frameInput.lookDX, frameInput.lookDY);
   const stepInput = { ...frameInput, lookDX: 0, lookDY: 0 };
   const steps = stepper.advance(frameDt);

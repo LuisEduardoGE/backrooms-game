@@ -116,3 +116,17 @@ describe('consumePressed', () => {
     expect(input.consumePressed('KeyN')).toBe(false);
   });
 });
+
+describe('flush', () => {
+  it('drops look and presses built up while not playing, but keeps held keys', () => {
+    const { target, input } = setup(true);
+    target.dispatchEvent(key('keydown', 'KeyW'));
+    target.dispatchEvent(mouse(500, 0));
+    target.dispatchEvent(key('keydown', 'KeyN'));
+    input.flush();
+    const mi = input.moveInput(0.01);
+    expect(mi.lookDX).toBe(0);
+    expect(mi.forward).toBe(1);
+    expect(input.consumePressed('KeyN')).toBe(false);
+  });
+});
