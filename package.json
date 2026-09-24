@@ -8,13 +8,15 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "trailer": "npm run build && node scripts/record-trailer.mjs"
   },
   "dependencies": {
     "three": "^0.186.1"
   },
   "devDependencies": {
     "@types/three": "^0.186.0",
+    "puppeteer-core": "^25.12.0",
     "typescript": "^7.0.2",
     "vite": "^8.3.1",
     "vitest": "^4.1.11"

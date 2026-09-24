@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { createAudioEngine } from './audio/engine';
 import { footstepLevel, humLevel, maybeEcho, whisperLevel } from './audio/mix';
 import { nextPhase, type Phase, type PhaseEvent } from './core/gameState';
+import { autopilotInput, createAutopilot } from './game/autopilot';
 import { createInput } from './core/input';
 import { createFixedStepper, FIXED_DT } from './core/loop';
 import { createRng, deriveSeed } from './core/rng';
@@ -31,7 +32,7 @@ import { placeArrows, shortestPath } from './world/clues';
 import { createEntityViews } from './world/entityViews';
 import { reachedExit } from './world/exit';
 import { generateLevel } from './world/generator';
-import { Cell, CELL_SIZE, cellToWorld, getCell, isDark, worldToCell } from './world/grid';
+import { Cell, CELL_SIZE, cellToWorld, DIR_STEP, getCell, isDark, worldToCell } from './world/grid';
 import { ITEM_COUNTS, type Item, placeItems } from './world/items';
 import { createProps } from './world/props';
 import { createChunkStreamer } from './world/streamer';
@@ -180,10 +181,21 @@ function onDirectorEvent(event: DirectorEvent, gameMs: number): void {
   } else if (event === 'presence') {
     blackout = { x: player.pos.x, z: player.pos.z, until: gameMs + BLACKOUT_MS };
     glitchUntil = Math.max(glitchUntil, gameMs + PRESENCE_GLITCH_MS);
-    if (!params.god) jolt(sanity, PRESENCE_JOLT);
+    if (!params.god && !params.attract) jolt(sanity, PRESENCE_JOLT);
   }
 }
 showPhase();
+
+// Attract/trailer mode: no pointer lock; the camcorder walks the true path on its own.
+const autopilot = params.attract ? createAutopilot() : null;
+const exitFace = {
+  x: cellToWorld(level.exit.x) + (DIR_STEP[level.exitSide].x * CELL_SIZE) / 2,
+  z: cellToWorld(level.exit.y) + (DIR_STEP[level.exitSide].y * CELL_SIZE) / 2,
+};
+if (autopilot) {
+  phase = 'playing';
+  showPhase();
+}
 
 overlay.addEventListener('click', () => {
   if (phase !== 'title' && phase !== 'paused') return;
@@ -229,7 +241,12 @@ renderer.setAnimationLoop((now: number) => {
   const playing = phase === 'playing';
 
   // Look is applied every rendered frame; movement runs in fixed steps and is interpolated below.
-  const frameInput = playing ? input.moveInput() : NO_INPUT;
+  const frameInput =
+    autopilot && playing
+      ? autopilotInput(autopilot, player.pos, player.yaw, truePath, frameDt, exitFace)
+      : playing
+        ? input.moveInput()
+        : NO_INPUT;
   if (playing && input.consumePressed('KeyN')) {
     toggleNightVision(camcorder);
     audio.click();
@@ -278,13 +295,13 @@ renderer.setAnimationLoop((now: number) => {
           player: player.pos,
           noises,
         });
-        if (!params.god && caughtPlayer(e, player.pos)) {
+        if (!params.god && !params.attract && caughtPlayer(e, player.pos)) {
           endTape('die', now);
           break;
         }
       }
       if (phase !== 'playing') break;
-      if (!params.god) {
+      if (!params.god && !params.attract) {
         const dark = isDark(level.grid, worldToCell(player.pos.x), worldToCell(player.pos.z));
         const fear = fearDrain(entities, player.pos, seesSmiler);
         updateSanity(sanity, FIXED_DT, { dark, nightVision: camcorder.nightVision, fear });

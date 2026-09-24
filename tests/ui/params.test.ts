@@ -3,7 +3,7 @@ import { parseParams, tapeUrl } from '../../src/ui/params';
 
 describe('parseParams', () => {
   it('defaults to no debug and no seed', () => {
-    expect(parseParams('')).toEqual({ debug: false, seed: null, god: false });
+    expect(parseParams('')).toEqual({ debug: false, seed: null, god: false, attract: false });
   });
 
   it('enables debug with or without a value', () => {
@@ -41,5 +41,12 @@ describe('tapeUrl', () => {
     const url = new URL(tapeUrl('http://localhost:5173/?debug&seed=5', null));
     expect(url.searchParams.has('seed')).toBe(false);
     expect(url.searchParams.has('debug')).toBe(true);
+  });
+});
+
+describe('attract flag', () => {
+  it('is on with ?attract', () => {
+    expect(parseParams('?attract').attract).toBe(true);
+    expect(parseParams('').attract).toBe(false);
   });
 });
