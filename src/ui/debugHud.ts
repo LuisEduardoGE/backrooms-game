@@ -47,7 +47,7 @@ export function createDebugHud(level: Level) {
   let fps = 0;
 
   return {
-    update(frameDt: number, player: PlayerState): void {
+    update(frameDt: number, player: PlayerState, markers: readonly { x: number; z: number }[] = []): void {
       frames++;
       elapsed += frameDt;
       if (elapsed >= 0.5) {
@@ -71,6 +71,8 @@ export function createDebugHud(level: Level) {
       ctx.moveTo(px, py);
       ctx.lineTo(px - Math.sin(player.yaw) * 10, py - Math.cos(player.yaw) * 10);
       ctx.stroke();
+      ctx.fillStyle = '#f0f';
+      for (const m of markers) ctx.fillRect((m.x / CELL_SIZE) * SCALE - 3, (m.z / CELL_SIZE) * SCALE - 3, 6, 6);
     },
   };
 }

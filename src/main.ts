@@ -6,9 +6,16 @@ import { createFixedStepper, FIXED_DT } from './core/loop';
 import { createRng, deriveSeed } from './core/rng';
 import { createVhsComposer } from './fx/composer';
 import { glitchAmount } from './fx/glitch';
+import { createDirector, type DirectorEvent, updateDirector } from './game/director';
+import { caughtPlayer, createEntity, type Entity, updateEntity } from './game/entity';
 import { findInteractable, promptFor } from './game/interact';
+import { hasLineOfSight } from './game/los';
+import { createFootsteps, type NoiseEvent, stepFootsteps } from './game/noise';
 import { NOTES } from './game/notes';
-import { createSanity, distortionFromSanity, drinkAlmondWater, isInsane, updateSanity } from './game/sanity';
+import {
+  createSanity, distortionFromSanity, drinkAlmondWater, fearDrain, isInsane, updateSanity,
+} from './game/sanity';
+import { spawnHowlerCell, spawnSmilerCells } from './game/spawns';
 import { createLightPool } from './lighting/lightPool';
 import { addBattery, createCamcorder, toggleNightVision, updateCamcorder } from './player/camcorder';
 import { applyLook, createPlayer, NO_INPUT, updatePlayer } from './player/controller';
@@ -18,9 +25,10 @@ import { createNoteReader } from './ui/noteReader';
 import { formatDuration, tapeStartTime } from './ui/osd';
 import { parseParams, tapeUrl } from './ui/params';
 import { placeArrows, shortestPath } from './world/clues';
+import { createEntityViews } from './world/entityViews';
 import { reachedExit } from './world/exit';
 import { generateLevel } from './world/generator';
-import { cellToWorld, isDark, worldToCell } from './world/grid';
+import { Cell, CELL_SIZE, cellToWorld, getCell, isDark, worldToCell } from './world/grid';
 import { ITEM_COUNTS, type Item, placeItems } from './world/items';
 import { createProps } from './world/props';
 import { createChunkStreamer } from './world/streamer';
@@ -72,6 +80,17 @@ const taken = new Set<number>();
 let notesFound = 0;
 const sanity = createSanity();
 const noteReader = createNoteReader(document.body);
+const footsteps = createFootsteps();
+const directorRng = createRng(deriveSeed(seed, 'director'));
+const director = createDirector(directorRng);
+const entityRng = createRng(deriveSeed(seed, 'entities'));
+const entities: Entity[] = [];
+const entityViews = createEntityViews(scene);
+const anyFloor = (x: number, y: number) => getCell(level.grid, x, y) === Cell.Floor;
+/** Smilers live in the dark and never leave it. */
+const darkOnly = (x: number, y: number) => anyFloor(x, y) && isDark(level.grid, x, y);
+/** Sight distance (cells) within which a visible Smiler frightens the player. */
+const SMILER_FEAR_CELLS = 10;
 /** performance.now() when the tape ended or escaped; null while the tape is running. */
 let endedAt: number | null = null;
 let endRevealed = false;
@@ -125,6 +144,16 @@ function endTape(event: 'die' | 'escape', now: number): void {
   const stats = `RECORDED ${formatDuration(recordedSec)} · NOTES ${notesFound}/${ITEM_COUNTS.note}`;
   for (const el of document.querySelectorAll<HTMLElement>('.stats')) el.textContent = stats;
   document.exitPointerLock();
+}
+
+function onDirectorEvent(event: DirectorEvent): void {
+  const here = { x: worldToCell(player.pos.x), y: worldToCell(player.pos.z) };
+  if (event === 'spawnSmilers') {
+    for (const cell of spawnSmilerCells(level.grid, here, entityRng)) entities.push(createEntity(entities.length, 'smiler', cell));
+  } else if (event === 'spawnHowler') {
+    const cell = spawnHowlerCell(level.grid, here, entityRng);
+    if (cell) entities.push(createEntity(entities.length, 'howler', cell));
+  }
 }
 showPhase();
 
@@ -180,6 +209,12 @@ renderer.setAnimationLoop((now: number) => {
   if (phase === 'reading') input.flush();
   applyLook(player, frameInput.lookDX, frameInput.lookDY);
   const stepInput = { ...frameInput, lookDX: 0, lookDY: 0 };
+  const seesSmiler = entities.some(
+    (e) =>
+      e.kind === 'smiler' &&
+      Math.hypot(e.pos.x - player.pos.x, e.pos.z - player.pos.z) / CELL_SIZE <= SMILER_FEAR_CELLS &&
+      hasLineOfSight(level.grid, player.pos, e.pos),
+  );
   const steps = stepper.advance(frameDt);
   for (let i = 0; i < steps; i++) {
     // Steps keep running when not playing (with no input) so interpolation settles instead of drifting.
@@ -191,9 +226,27 @@ renderer.setAnimationLoop((now: number) => {
     if (playing) {
       updateCamcorder(camcorder, FIXED_DT);
       recordedSec += FIXED_DT;
+      const footstep = stepFootsteps(footsteps, FIXED_DT, player.moving, player.gait);
+      const noises: NoiseEvent[] = footstep ? [{ x: player.pos.x, z: player.pos.z, radius: footstep }] : [];
+      for (const event of updateDirector(director, FIXED_DT, footstep, directorRng)) onDirectorEvent(event);
+      for (const e of entities) {
+        updateEntity(e, FIXED_DT, {
+          grid: level.grid,
+          canEnter: e.kind === 'smiler' ? darkOnly : anyFloor,
+          rng: entityRng,
+          player: player.pos,
+          noises,
+        });
+        if (!params.god && caughtPlayer(e, player.pos)) {
+          endTape('die', now);
+          break;
+        }
+      }
+      if (phase !== 'playing') break;
       if (!params.god) {
         const dark = isDark(level.grid, worldToCell(player.pos.x), worldToCell(player.pos.z));
-        updateSanity(sanity, FIXED_DT, { dark, nightVision: camcorder.nightVision });
+        const fear = fearDrain(entities, player.pos, seesSmiler);
+        updateSanity(sanity, FIXED_DT, { dark, nightVision: camcorder.nightVision, fear });
       }
     }
   }
@@ -220,6 +273,7 @@ renderer.setAnimationLoop((now: number) => {
   streamer.update(cellX, cellY);
   lightPool.update(camera.position.x, camera.position.z, now / 1000);
   props.update(now / 1000);
+  entityViews.sync(entities, a, frameDt);
   irLight.position.copy(camera.position);
   irLight.intensity = IR_INTENSITY * camcorder.nvBlend;
 
@@ -229,7 +283,7 @@ renderer.setAnimationLoop((now: number) => {
     nightVision: camcorder.nightVision,
     clockMs: tapeStart + recordedSec * 1000,
   });
-  debugHud?.update(frameDt, player);
+  debugHud?.update(frameDt, player, entities.map((e) => e.pos));
 
   const t = now / 1000;
   const ending = endedAt !== null && !endRevealed;
