@@ -13,8 +13,11 @@ import { createDebugHud } from './ui/debugHud';
 import { createHud } from './ui/hud';
 import { tapeStartTime } from './ui/osd';
 import { parseParams } from './ui/params';
+import { placeArrows, shortestPath } from './world/clues';
 import { generateLevel } from './world/generator';
 import { cellToWorld, worldToCell } from './world/grid';
+import { placeItems } from './world/items';
+import { createProps } from './world/props';
 import { createChunkStreamer } from './world/streamer';
 import { createWorldMaterials } from './world/textures';
 
@@ -49,6 +52,10 @@ const level = generateLevel(seed);
 const materials = createWorldMaterials(createRng(deriveSeed(seed, 'textures')));
 const streamer = createChunkStreamer(scene, level.grid, materials);
 const lightPool = createLightPool(scene, level.grid, deriveSeed(seed, 'lights'));
+const truePath = shortestPath(level.grid, level.start, level.exit);
+const arrows = placeArrows(level.grid, truePath, createRng(deriveSeed(seed, 'clues')));
+const items = placeItems(level, truePath, createRng(deriveSeed(seed, 'items')));
+const props = createProps(scene, level, arrows, items, materials.wall.map);
 const player = createPlayer({ x: cellToWorld(level.start.x), z: cellToWorld(level.start.y) }, level.startYaw);
 const debugHud = params.debug ? createDebugHud(level) : null;
 if (params.debug) console.info(`[backrooms] seed ${seed} — reload with ?debug&seed=${seed} to replay`);
@@ -126,6 +133,7 @@ renderer.setAnimationLoop((now: number) => {
   const cellY = worldToCell(player.pos.z);
   streamer.update(cellX, cellY);
   lightPool.update(camera.position.x, camera.position.z, now / 1000);
+  props.update(now / 1000);
   irLight.position.copy(camera.position);
   irLight.intensity = IR_INTENSITY * camcorder.nvBlend;
 
