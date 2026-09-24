@@ -1,5 +1,6 @@
-import type { Rng } from '../core/rng';
-import { Cell, type Grid, getCell, setCell } from './grid';
+import { createRng, deriveSeed, type Rng } from '../core/rng';
+import { Cell, createGrid, type Grid, getCell, type Point, setCell } from './grid';
+import { bfsDistances } from './pathing';
 
 export interface Room {
   id: number;
@@ -195,4 +196,104 @@ export function connectRooms(grid: Grid, rooms: Room[], rng: Rng, o: GenOptions)
     doors++;
   }
   return doors;
+}
+
+export interface Level {
+  seed: number;
+  grid: Grid;
+  rooms: Room[];
+  start: Point;
+  exit: Point;
+}
+
+export const MAX_GEN_ATTEMPTS = 20;
+
+export function generateLevel(seed: number, overrides: Partial<GenOptions> = {}): Level {
+  const o: GenOptions = { ...DEFAULT_GEN, ...overrides };
+  for (let attempt = 0; attempt < MAX_GEN_ATTEMPTS; attempt++) {
+    const layoutSeed = deriveSeed(seed, attempt === 0 ? 'layout' : `layout:${attempt}`);
+    const level = tryGenerate(layoutSeed, o);
+    if (level) return { seed, ...level };
+  }
+  throw new Error(`generateLevel: no valid layout for seed ${seed} after ${MAX_GEN_ATTEMPTS} attempts`);
+}
+
+function tryGenerate(layoutSeed: number, o: GenOptions): Omit<Level, 'seed'> | null {
+  const rng = createRng(layoutSeed);
+  const grid = createGrid(o.width, o.height);
+  const rooms = buildRooms(grid, rng, o);
+  connectRooms(grid, rooms, rng, o);
+  const startRoom = pickStartRoom(rooms, rng, o);
+  const start = pickFloorCell(grid, startRoom, rng);
+  assignDarkZones(grid, rooms, startRoom.id, rng, o.darkFraction);
+  const exit = pickExit(grid, start, rng, o);
+  return exit ? { grid, rooms, start, exit } : null;
+}
+
+/** Start near a random corner so the far side of the map is available for the exit. */
+function pickStartRoom(rooms: Room[], rng: Rng, o: GenOptions): Room {
+  const corner = rng.pick([
+    { x: 0, y: 0 },
+    { x: o.width, y: 0 },
+    { x: 0, y: o.height },
+    { x: o.width, y: o.height },
+  ]);
+  const dist = (r: Room) => Math.hypot(r.x + r.w / 2 - corner.x, r.y + r.h / 2 - corner.y);
+  const near = rooms.filter((r) => dist(r) < o.width * 0.25);
+  return near.length > 0 ? rng.pick(near) : rooms.reduce((best, r) => (dist(r) < dist(best) ? r : best));
+}
+
+function pickFloorCell(grid: Grid, room: Room, rng: Rng): Point {
+  const cells: Point[] = [];
+  for (let y = room.y; y < room.y + room.h; y++) {
+    for (let x = room.x; x < room.x + room.w; x++) {
+      if (getCell(grid, x, y) === Cell.Floor) cells.push({ x, y });
+    }
+  }
+  return rng.pick(cells);
+}
+
+/** Switches off whole rooms (never the start room) until the dark fraction is reached. */
+function assignDarkZones(grid: Grid, rooms: Room[], startRoomId: number, rng: Rng, fraction: number): void {
+  let floor = 0;
+  for (let i = 0; i < grid.cells.length; i++) if (grid.cells[i] === Cell.Floor) floor++;
+  const target = floor * fraction;
+
+  let dark = 0;
+  for (const r of rng.shuffle(rooms.filter((room) => room.id !== startRoomId))) {
+    if (dark >= target) break;
+    for (let y = r.y; y < r.y + r.h; y++) {
+      for (let x = r.x; x < r.x + r.w; x++) {
+        const i = y * grid.width + x;
+        grid.dark[i] = 1;
+        if (grid.cells[i] === Cell.Floor) dark++;
+      }
+    }
+  }
+}
+
+function hasAdjacentWall(grid: Grid, x: number, y: number): boolean {
+  return (
+    getCell(grid, x + 1, y) === Cell.Wall ||
+    getCell(grid, x - 1, y) === Cell.Wall ||
+    getCell(grid, x, y + 1) === Cell.Wall ||
+    getCell(grid, x, y - 1) === Cell.Wall
+  );
+}
+
+/** Exit: reachable, lit floor cell against a wall (the future noclip wall), far from start. */
+function pickExit(grid: Grid, start: Point, rng: Rng, o: GenOptions): Point | null {
+  const dist = bfsDistances(grid, start.x, start.y);
+  const minDistance = o.width * o.exitDistanceRatio;
+  const candidates: Point[] = [];
+  for (let y = 0; y < grid.height; y++) {
+    for (let x = 0; x < grid.width; x++) {
+      const i = y * grid.width + x;
+      if (grid.cells[i] !== Cell.Floor || dist[i] < 0 || grid.dark[i]) continue;
+      if (Math.hypot(x - start.x, y - start.y) < minDistance) continue;
+      if (!hasAdjacentWall(grid, x, y)) continue;
+      candidates.push({ x, y });
+    }
+  }
+  return candidates.length > 0 ? rng.pick(candidates) : null;
 }
