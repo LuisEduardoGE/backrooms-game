@@ -1,0 +1,52 @@
+import { describe, expect, it } from 'vitest';
+import { ECHO_CHANCE, footstepLevel, humLevel, maybeEcho, whisperLevel } from '../../src/audio/mix';
+import { createRng } from '../../src/core/rng';
+
+describe('humLevel', () => {
+  it('is loudest under a panel, fades with distance, and is silent in the dark or a blackout', () => {
+    expect(humLevel(0, false)).toBeCloseTo(0.2, 6);
+    expect(humLevel(3, false)).toBeLessThan(humLevel(0, false));
+    expect(humLevel(3, false)).toBeGreaterThan(0);
+    expect(humLevel(null, false)).toBe(0);
+    expect(humLevel(0, true)).toBe(0);
+    expect(humLevel(50, false)).toBeGreaterThan(0);
+  });
+});
+
+describe('footstepLevel / whisperLevel', () => {
+  it('orders gaits by loudness and keeps every level ≤ 1', () => {
+    expect(footstepLevel('crouch')).toBeLessThan(footstepLevel('walk'));
+    expect(footstepLevel('walk')).toBeLessThan(footstepLevel('sprint'));
+    expect(footstepLevel('sprint')).toBeLessThanOrEqual(1);
+  });
+
+  it('whispers only once the tape starts to warp', () => {
+    expect(whisperLevel(0)).toBe(0);
+    expect(whisperLevel(0.1)).toBe(0);
+    expect(whisperLevel(0.5)).toBeGreaterThan(0);
+    expect(whisperLevel(1)).toBeCloseTo(0.3, 6);
+  });
+});
+
+describe('maybeEcho', () => {
+  it('never echoes a silent step', () => {
+    const rng = createRng(1);
+    for (let i = 0; i < 200; i++) expect(maybeEcho(rng, 0, { x: 0, z: 0 }, 0)).toBeNull();
+  });
+
+  it('echoes roughly a quarter of audible steps, shortly after, from behind', () => {
+    const rng = createRng(2);
+    const echoes = Array.from({ length: 2000 }, () => maybeEcho(rng, 6, { x: 10, z: 10 }, 0)).filter((e) => e !== null);
+    expect(echoes.length / 2000).toBeGreaterThan(ECHO_CHANCE - 0.05);
+    expect(echoes.length / 2000).toBeLessThan(ECHO_CHANCE + 0.05);
+    for (const e of echoes) {
+      expect(e!.delaySec).toBeGreaterThanOrEqual(0.3);
+      expect(e!.delaySec).toBeLessThanOrEqual(0.5);
+      const d = Math.hypot(e!.x - 10, e!.z - 10);
+      expect(d).toBeGreaterThanOrEqual(6 - 1e-9);
+      expect(d).toBeLessThanOrEqual(10 + 1e-9);
+      // Facing −z (yaw 0), "behind" is +z.
+      expect(e!.z - 10).toBeGreaterThan(0);
+    }
+  });
+});
