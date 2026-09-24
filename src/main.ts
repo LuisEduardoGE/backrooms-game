@@ -18,6 +18,7 @@ import { createNoteReader } from './ui/noteReader';
 import { formatDuration, tapeStartTime } from './ui/osd';
 import { parseParams, tapeUrl } from './ui/params';
 import { placeArrows, shortestPath } from './world/clues';
+import { reachedExit } from './world/exit';
 import { generateLevel } from './world/generator';
 import { cellToWorld, isDark, worldToCell } from './world/grid';
 import { ITEM_COUNTS, type Item, placeItems } from './world/items';
@@ -34,6 +35,9 @@ const overlay = document.getElementById('overlay') as HTMLDivElement;
 const titleScreen = document.getElementById('title-screen') as HTMLDivElement;
 const pauseScreen = document.getElementById('pause-screen') as HTMLDivElement;
 const endScreen = document.getElementById('end-screen') as HTMLDivElement;
+const escapeScreen = document.getElementById('escape-screen') as HTMLDivElement;
+/** The fall through the floor lasts a little longer than the TAPE ENDS glitch. */
+const ESCAPE_REVEAL_SEC = 1.4;
 const lockError = document.getElementById('lock-error') as HTMLParagraphElement;
 /** Seconds of glitching before an end screen appears. */
 const END_REVEAL_SEC = 1.0;
@@ -93,6 +97,7 @@ function showPhase(): void {
   titleScreen.hidden = phase !== 'title';
   pauseScreen.hidden = phase !== 'paused';
   endScreen.hidden = !(phase === 'ended' && endRevealed);
+  escapeScreen.hidden = !(phase === 'escaped' && endRevealed);
   noteReader.setVisible(phase === 'reading');
   hud.setVisible(phase !== 'title' && !(over && endRevealed));
 }
@@ -177,6 +182,10 @@ renderer.setAnimationLoop((now: number) => {
   for (let i = 0; i < steps; i++) {
     // Steps keep running when not playing (with no input) so interpolation settles instead of drifting.
     updatePlayer(player, stepInput, FIXED_DT, level.grid);
+    if (playing && reachedExit(level.exit, level.exitSide, player.pos)) {
+      endTape('escape', now);
+      break;
+    }
     if (playing) {
       updateCamcorder(camcorder, FIXED_DT);
       recordedSec += FIXED_DT;
@@ -187,7 +196,7 @@ renderer.setAnimationLoop((now: number) => {
     }
   }
   if (phase === 'playing' && isInsane(sanity)) endTape('die', now);
-  if (endedAt !== null && !endRevealed && (now - endedAt) / 1000 >= END_REVEAL_SEC) {
+  if (endedAt !== null && !endRevealed && (now - endedAt) / 1000 >= (phase === 'escaped' ? ESCAPE_REVEAL_SEC : END_REVEAL_SEC)) {
     endRevealed = true;
     showPhase();
   }
@@ -199,6 +208,11 @@ renderer.setAnimationLoop((now: number) => {
     player.prevPos.z + (player.pos.z - player.prevPos.z) * a,
   );
   camera.rotation.set(player.pitch, player.yaw, 0);
+  if (phase === 'escaped' && endedAt !== null) {
+    // Noclip: drop through the floor.
+    const fall = (now - endedAt) / 1000;
+    camera.position.y -= 4.9 * fall * fall;
+  }
   const cellX = worldToCell(player.pos.x);
   const cellY = worldToCell(player.pos.z);
   streamer.update(cellX, cellY);
