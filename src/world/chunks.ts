@@ -1,5 +1,6 @@
 export const CHUNK_CELLS = 16;
-export const LOAD_RADIUS = 3;
+/** Chunks loaded around the player. Fog hides everything past ~35 m; radius 2 keeps ≥ 64 m loaded. */
+export const LOAD_RADIUS = 2;
 
 export type ChunkKey = string;
 

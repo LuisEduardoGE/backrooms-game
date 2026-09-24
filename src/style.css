@@ -1,3 +1,15 @@
+@font-face {
+  font-family: 'VT323';
+  src: url('./assets/fonts/VT323-Regular.woff2') format('woff2');
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Reenie Beanie';
+  src: url('./assets/fonts/ReenieBeanie-Regular.woff2') format('woff2');
+  font-display: swap;
+}
+
 html,
 body {
   margin: 0;
