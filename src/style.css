@@ -285,3 +285,21 @@ body {
 .lock-error[hidden] {
   display: none;
 }
+
+#desktop-only {
+  position: fixed;
+  inset: 0;
+  justify-content: center;
+  background: #000;
+  color: #f4f4ec;
+  font-family: 'VT323', 'Courier New', monospace;
+}
+
+#desktop-only[hidden] {
+  display: none;
+}
+
+#desktop-only img {
+  max-width: 100%;
+  height: auto;
+}
