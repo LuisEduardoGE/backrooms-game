@@ -2,6 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { createRng } from '../../src/core/rng';
 import { CATCH_DISTANCE, caughtPlayer, createEntity, type Entity, type EntityWorld, TUNING, updateEntity } from '../../src/game/entity';
 import type { NoiseEvent } from '../../src/game/noise';
+import { vi } from 'vitest';
+import { findPath } from '../../src/game/astar';
+
+vi.mock('../../src/game/astar', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('../../src/game/astar')>();
+  return { ...mod, findPath: vi.fn(mod.findPath) };
+});
 import { Cell, CELL_SIZE, cellToWorld, createGrid, getCell, type Grid, setCell, worldToCell } from '../../src/world/grid';
 
 /** 30×30 open room (floor 1..28). */
@@ -154,5 +161,35 @@ describe('catching and reaching', () => {
     const e = createEntity(0, 'howler', { x: 5, y: 5 });
     updateEntity(e, 1 / 60, world(open(), at(20, 5)));
     expect(e.state).not.toBe('chase');
+  });
+});
+
+describe('papercuts', () => {
+  it('does not re-plan a failed path every step (throttled like successful ones)', () => {
+    const g = open();
+    // Two dark zones the Smiler can't cross between: x ≤ 5 and x ≥ 10.
+    const zone = (x: number, y: number) => floor(g)(x, y) && (x <= 5 || x >= 10);
+    const e = createEntity(0, 'smiler', { x: 3, y: 10 });
+    vi.mocked(findPath).mockClear();
+    const w = world(g, at(12, 10), [], zone, zone); // visible across the gap, unreachable
+    for (let i = 0; i < 60; i++) updateEntity(e, 1 / 60, w);
+    expect(vi.mocked(findPath).mock.calls.length).toBeLessThanOrEqual(3);
+  });
+
+  it('searches around the noise it just investigated, not an old sighting', () => {
+    const g = open();
+    // Seal the player into the far corner so the Howler can't see them.
+    for (let i = 20; i <= 28; i++) {
+      setCell(g, 20, i, Cell.Wall);
+      setCell(g, i, 20, Cell.Wall);
+    }
+    const e = createEntity(0, 'howler', { x: 5, y: 5 });
+    e.lastSeen = at(5, 25); // an old, reachable sighting far from the noise
+    run(e, world(g, at(25, 25), [{ ...at(9, 5), radius: 6 }]), 5);
+    expect(e.state).toBe('search');
+    for (let i = 0; i < 300; i++) {
+      updateEntity(e, 1 / 60, world(g, at(25, 25)));
+      if (e.goal) expect(Math.max(Math.abs(e.goal.x - 9), Math.abs(e.goal.y - 5))).toBeLessThanOrEqual(5);
+    }
   });
 });

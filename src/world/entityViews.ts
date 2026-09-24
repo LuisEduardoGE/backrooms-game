@@ -47,14 +47,14 @@ function createHowler(): HowlerRig {
 
   const torso = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.8, 0.2), skin);
   torso.position.y = 1.75;
-  torso.rotation.x = 0.25;
+  torso.rotation.x = -0.25; // leans forward (toward −Z): hunched
   const head = new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 10), skin);
   head.scale.set(1, 1.35, 1);
   head.position.set(0, 2.3, -0.14);
   const eyeGeo = new THREE.SphereGeometry(0.018, 6, 6);
   for (const x of [-0.05, 0.05]) {
     const eye = new THREE.Mesh(eyeGeo, eyeMat);
-    eye.position.set(x, 2.33, -0.26);
+    eye.position.set(x, 2.33, -0.29);
     body.add(eye);
   }
   body.add(torso, head);
@@ -90,7 +90,7 @@ export function createEntityViews(scene: THREE.Scene) {
   const howlers = new Map<number, HowlerRig>();
 
   return {
-    sync(entities: readonly Entity[], alpha: number, dt: number): void {
+    sync(entities: readonly Entity[], alpha: number, dt: number, animate: boolean): void {
       for (const e of entities) {
         const x = e.prevPos.x + (e.pos.x - e.prevPos.x) * alpha;
         const z = e.prevPos.z + (e.pos.z - e.prevPos.z) * alpha;
@@ -113,7 +113,7 @@ export function createEntityViews(scene: THREE.Scene) {
           h.root.position.set(x, 0, z);
           h.root.rotation.y = e.heading;
           // Last fixed step's displacement × the 60 Hz step rate = metres per second.
-          const speed = dt > 0 ? Math.hypot(e.pos.x - e.prevPos.x, e.pos.z - e.prevPos.z) * 60 : 0;
+          const speed = animate && dt > 0 ? Math.hypot(e.pos.x - e.prevPos.x, e.pos.z - e.prevPos.z) * 60 : 0;
           h.phase += speed * dt * 2.2;
           const swing = Math.sin(h.phase) * 0.5 * Math.min(1, speed / 2);
           h.legs[0].rotation.x = swing;

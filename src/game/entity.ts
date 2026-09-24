@@ -46,6 +46,8 @@ export interface Entity {
   goal: Point | null;
   path: Point[];
   lastSeen: Vec2 | null;
+  /** Where a search wanders: the last sighting, or the noise just investigated. */
+  searchCentre: Point | null;
   /** Counts down: sight-loss grace while chasing, remaining search time while searching. */
   timer: number;
   repath: number;
@@ -63,7 +65,7 @@ export interface EntityWorld {
 
 export function createEntity(id: number, kind: EntityKind, cell: Point): Entity {
   const pos = { x: cellToWorld(cell.x), z: cellToWorld(cell.y) };
-  return { id, kind, pos, prevPos: { ...pos }, heading: 0, state: 'roam', goal: null, path: [], lastSeen: null, timer: 0, repath: 0 };
+  return { id, kind, pos, prevPos: { ...pos }, heading: 0, state: 'roam', goal: null, path: [], lastSeen: null, searchCentre: null, timer: 0, repath: 0 };
 }
 
 const cellOf = (p: Vec2): Point => ({ x: worldToCell(p.x), y: worldToCell(p.z) });
@@ -121,6 +123,7 @@ export function updateEntity(e: Entity, dt: number, w: EntityWorld): void {
     if (e.timer <= 0) {
       e.state = 'search';
       e.timer = t.searchSec;
+      e.searchCentre = e.lastSeen ? cellOf(e.lastSeen) : here;
       setGoal(e, e.lastSeen ? cellOf(e.lastSeen) : null);
     }
   }
@@ -140,6 +143,7 @@ export function updateEntity(e: Entity, dt: number, w: EntityWorld): void {
   if (e.state === 'investigate' && (arrived || e.goal === null)) {
     e.state = 'search';
     e.timer = t.searchSec;
+    e.searchCentre = e.goal ?? here;
     setGoal(e, null);
   }
   if (e.state === 'search') {
@@ -148,14 +152,15 @@ export function updateEntity(e: Entity, dt: number, w: EntityWorld): void {
       e.state = 'roam';
       setGoal(e, null);
     } else if (e.goal === null || arrived) {
-      setGoal(e, randomNearby(w, e.lastSeen ? cellOf(e.lastSeen) : here, SEARCH_WANDER));
+      setGoal(e, randomNearby(w, e.searchCentre ?? here, SEARCH_WANDER));
     }
   }
   if (e.state === 'roam' && (e.goal === null || arrived)) setGoal(e, randomNearby(w, here, t.roamRadius));
 
   // Planning (throttled).
   e.repath -= dt;
-  if (e.goal && (e.repath <= 0 || e.path.length === 0) && !sameCell(here, e.goal)) {
+  // Re-plan on the throttle, or at once only when a fresh goal was just set (setGoal zeroes repath).
+  if (e.goal && e.repath <= 0 && !sameCell(here, e.goal)) {
     const path = findPath(w.grid, here, e.goal, w.canEnter, MAX_PATH_EXPANSIONS);
     e.path = path ? path.slice(1) : [];
     e.repath = REPATH_SEC;

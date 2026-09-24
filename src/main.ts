@@ -156,15 +156,18 @@ function interact(item: Item): void {
 }
 
 function endTape(event: 'die' | 'escape', now: number): void {
-  audio.staticBurst();
+  const before = phase;
   setPhase(event);
+  if (phase === before) return;
+  audio.staticBurst();
   endedAt = now;
   const stats = `RECORDED ${formatDuration(recordedSec)} · NOTES ${notesFound}/${ITEM_COUNTS.note}`;
   for (const el of document.querySelectorAll<HTMLElement>('.stats')) el.textContent = stats;
   document.exitPointerLock();
 }
 
-function onDirectorEvent(event: DirectorEvent, now: number): void {
+/** `gameMs`: the tape clock (recorded time), so Presence/warning timers pause with the game. */
+function onDirectorEvent(event: DirectorEvent, gameMs: number): void {
   const here = { x: worldToCell(player.pos.x), y: worldToCell(player.pos.z) };
   if (event === 'spawnSmilers') {
     for (const cell of spawnSmilerCells(level.grid, here, entityRng)) entities.push(createEntity(entities.length, 'smiler', cell));
@@ -172,11 +175,11 @@ function onDirectorEvent(event: DirectorEvent, now: number): void {
     const cell = spawnHowlerCell(level.grid, here, entityRng);
     if (cell) entities.push(createEntity(entities.length, 'howler', cell));
     audio.howl();
-    glitchUntil = Math.max(glitchUntil, now + HOWLER_WARNING_MS);
-    dimUntil = now + HOWLER_WARNING_MS;
+    glitchUntil = Math.max(glitchUntil, gameMs + HOWLER_WARNING_MS);
+    dimUntil = gameMs + HOWLER_WARNING_MS;
   } else if (event === 'presence') {
-    blackout = { x: player.pos.x, z: player.pos.z, until: now + BLACKOUT_MS };
-    glitchUntil = Math.max(glitchUntil, now + PRESENCE_GLITCH_MS);
+    blackout = { x: player.pos.x, z: player.pos.z, until: gameMs + BLACKOUT_MS };
+    glitchUntil = Math.max(glitchUntil, gameMs + PRESENCE_GLITCH_MS);
     if (!params.god) jolt(sanity, PRESENCE_JOLT);
   }
 }
@@ -265,7 +268,7 @@ renderer.setAnimationLoop((now: number) => {
         const echo = maybeEcho(echoRng, footstep, player.pos, player.yaw);
         if (echo) pendingEchoes.push({ at: now + echo.delaySec * 1000, x: echo.x, z: echo.z });
       }
-      for (const event of updateDirector(director, FIXED_DT, footstep, directorRng)) onDirectorEvent(event, now);
+      for (const event of updateDirector(director, FIXED_DT, footstep, directorRng)) onDirectorEvent(event, recordedSec * 1000);
       for (const e of entities) {
         updateEntity(e, FIXED_DT, {
           grid: level.grid,
@@ -309,16 +312,18 @@ renderer.setAnimationLoop((now: number) => {
   const cellX = worldToCell(player.pos.x);
   const cellY = worldToCell(player.pos.z);
   streamer.update(cellX, cellY);
-  const activeBlackout = blackout && now < blackout.until ? { x: blackout.x, z: blackout.z, radius: BLACKOUT_RADIUS } : null;
-  lightPool.update(camera.position.x, camera.position.z, now / 1000, activeBlackout, now < dimUntil);
-  materials.lightOn.emissiveIntensity = panelEmissive * panelGlow(activeBlackout !== null, now < dimUntil);
+  // Presence/warning timers run on the tape clock, so they don't expire while paused.
+  const gameMs = recordedSec * 1000;
+  const activeBlackout = blackout && gameMs < blackout.until ? { x: blackout.x, z: blackout.z, radius: BLACKOUT_RADIUS } : null;
+  lightPool.update(camera.position.x, camera.position.z, now / 1000, activeBlackout, gameMs < dimUntil);
+  materials.lightOn.emissiveIntensity = panelEmissive * panelGlow(activeBlackout !== null, gameMs < dimUntil);
   props.update(now / 1000);
-  entityViews.sync(entities, a, frameDt);
+  entityViews.sync(entities, a, frameDt, phase === 'playing');
   irLight.position.copy(camera.position);
   irLight.intensity = IR_INTENSITY * camcorder.nvBlend;
 
   hud.update({
-    recording: playing,
+    recording: playing || phase === 'reading' || (endedAt !== null && !endRevealed),
     battery: camcorder.battery,
     nightVision: camcorder.nightVision,
     clockMs: tapeStart + recordedSec * 1000,
@@ -348,7 +353,7 @@ renderer.setAnimationLoop((now: number) => {
     time: t,
     nightVision: camcorder.nvBlend,
     battery: camcorder.battery / 100,
-    glitch: ending || now < glitchUntil ? 1 : glitchAmount(t, glitchSeed, camcorder.battery),
+    glitch: ending || gameMs < glitchUntil ? 1 : glitchAmount(t, glitchSeed, camcorder.battery),
     distortion: ending ? 1 : distortionFromSanity(sanity.value),
   });
 });
