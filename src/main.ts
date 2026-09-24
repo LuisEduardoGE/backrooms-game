@@ -77,7 +77,7 @@ renderer.setAnimationLoop((now: number) => {
   const cellX = worldToCell(player.pos.x);
   const cellY = worldToCell(player.pos.z);
   streamer.update(cellX, cellY);
-  lightPool.update(cellX, cellY, now / 1000);
+  lightPool.update(camera.position.x, camera.position.z, now / 1000);
   debugHud?.update(frameDt, player);
   renderer.render(scene, camera);
 });
