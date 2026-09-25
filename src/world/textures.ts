@@ -284,16 +284,14 @@ export async function loadWorldMaterials(rng: Rng, panels: PanelMap): Promise<Wo
   const bgNormalMap = finish(bgNormal, W, false);
   const bgRoughMap = finish(bgRough, W, false);
   const paperMat = (map: HTMLCanvasElement | HTMLImageElement, normalMap: THREE.Texture, roughnessMap: THREE.Texture) =>
-    lit(
-      new THREE.MeshStandardMaterial({
-        map: finish(map instanceof HTMLCanvasElement ? new THREE.CanvasTexture(map) : new THREE.Texture(map), W, true),
-        normalMap,
-        normalScale: new THREE.Vector2(0.8, 0.8),
-        roughnessMap,
-        roughness: 1,
-        vertexColors: true,
-      }),
-    );
+    new THREE.MeshStandardMaterial({
+      map: finish(map instanceof HTMLCanvasElement ? new THREE.CanvasTexture(map) : new THREE.Texture(map), W, true),
+      normalMap,
+      normalScale: new THREE.Vector2(0.8, 0.8),
+      roughnessMap,
+      roughness: 1,
+      vertexColors: true,
+    });
   const chevron = paperMat(bgColor, bgNormalMap, bgRoughMap);
   chevron.map!.needsUpdate = true;
   const plate = new THREE.CanvasTexture(outletPlate());
@@ -302,16 +300,16 @@ export async function loadWorldMaterials(rng: Rng, panels: PanelMap): Promise<Wo
     wall: chevron,
     wallDots: paperMat(dotPaper(paper, 0.6), finish(wallpaperNormal(paper), W, false), paperRoughMap),
     wallStained: paperMat(stainedPaper(bgColor, stained), bgNormalMap, bgRoughMap),
-    rail: lit(new THREE.MeshStandardMaterial({ color: 0x6f5535, roughness: 0.6, vertexColors: true })),
+    rail: new THREE.MeshStandardMaterial({ color: 0x6f5535, roughness: 0.6, vertexColors: true }),
     tbar: lit(new THREE.MeshStandardMaterial({ color: new THREE.Color(0.6, 0.57, 0.45), roughness: 0.7, vertexColors: true, side: THREE.DoubleSide }), 1.1, CEILING_PANEL_INTENSITY),
-    floor: lit(new THREE.MeshStandardMaterial({
+    floor: new THREE.MeshStandardMaterial({
       map: finish(new THREE.CanvasTexture(carpet(carpetImg, rng)), TEXTURE_METRES.carpet, true),
       normalMap: finish(carpetN, TEXTURE_METRES.carpet, false),
       normalScale: new THREE.Vector2(1.2, 1.2),
       roughnessMap: finish(carpetR, TEXTURE_METRES.carpet, false),
       roughness: 1,
       vertexColors: true,
-    })),
+    }),
     ceiling: lit(new THREE.MeshStandardMaterial({
       map: finish(new THREE.CanvasTexture(ceiling(ceilingImg)), TEXTURE_METRES.ceiling, true),
       normalMap: finish(ceilN, TEXTURE_METRES.ceiling, false),
@@ -328,6 +326,6 @@ export async function loadWorldMaterials(rng: Rng, panels: PanelMap): Promise<Wo
       color: new THREE.Color(2.0, 1.97, 1.85),
       fog: true,
     }),
-    outlet: lit(new THREE.MeshStandardMaterial({ map: plate, roughness: 0.45 })),
+    outlet: new THREE.MeshStandardMaterial({ map: plate, roughness: 0.45 }),
   };
 }

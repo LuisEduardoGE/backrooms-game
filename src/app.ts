@@ -20,8 +20,10 @@ import {
 } from './game/sanity';
 import { spawnHowlerCell, spawnSmilerCells } from './game/spawns';
 import { AMBIENT_DARK, createLightField } from './lighting/bake';
-import { flicker, isFaultyLight, lightFalloff, nearestLitLightsAt, panelLevel, sceneExposure } from './lighting/lights';
+import { isFaultyLight, nearestLitLightsAt, panelLevel, sceneExposure } from './lighting/lights';
 import { createPanelMap } from './lighting/panelMap';
+import { createShadowLights } from './lighting/shadowLights';
+import { createSlots, updateSlots } from './lighting/shadowSlots';
 import { lightAt } from './lighting/sample';
 import { addBattery, createCamcorder, toggleNightVision, updateCamcorder } from './player/camcorder';
 import { applyLook, createPlayer, headBob, NO_INPUT, updatePlayer } from './player/controller';
@@ -65,6 +67,9 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO));
 renderer.setSize(window.innerWidth, window.innerHeight);
 // AgX: soft filmic highlight roll-off, so bright panels and walls bloom into haze instead of clipping.
 renderer.toneMapping = THREE.AgXToneMapping;
+// Soft shadow maps for the few real panel lights near the player.
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 /** Exposed for the walls (the photo's brightest surfaces), as an auto-exposing camcorder would. */
 const EXPOSURE = 1.75;
 renderer.toneMappingExposure = EXPOSURE;
@@ -73,12 +78,7 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color(FOG_COLOR);
 scene.fog = new THREE.FogExp2(FOG_COLOR, 0.02);
 // Soft ambient fill; per-area brightness (and darkness in dead zones) is baked into the meshes.
-scene.add(new THREE.HemisphereLight(0xfff0c4, 0xa08e4c, 1.25));
-// A little straight-down fill; the real direct light comes from the panel lattice in the surface
-// shaders (lighting/panelLights.ts), which is what makes the wallpaper emboss and tile relief read.
-const keyLight = new THREE.DirectionalLight(0xfff2d0, 0.25);
-keyLight.position.set(0.15, 1, 0.1);
-scene.add(keyLight);
+scene.add(new THREE.HemisphereLight(0xfff0c4, 0xa08e4c, 0.75));
 
 const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.05, 120);
 camera.rotation.order = 'YXZ';
@@ -161,6 +161,17 @@ let sensitivity = (() => {
 })();
 
 const panelColor = new THREE.Color();
+/** Real shadow-casting lights on the nearest panels (see lighting/shadowSlots). */
+const SHADOW_LIGHTS = 4;
+/** Panels farther than this (metres) never get a real light; they fade out before it. */
+const SHADOW_LIGHT_REACH = 9;
+/** How fast a real light fades in or out when it changes panel (intensity per second). */
+const SHADOW_FADE = 3;
+const shadowSlots = createSlots(SHADOW_LIGHTS);
+const shadowLights = createShadowLights(scene, SHADOW_LIGHTS);
+/** Latest brightness and position of every loaded panel, by id (cell index). */
+const panelLevels = new Map<number, number>();
+const panelPositions = new Map<number, { x: number; z: number }>();
 /** Per chunk: which panels are faulty (the only ones that change frame to frame) and the state last written. */
 const panelCache = new WeakMap<ChunkPanels, { faulty: number[]; state: string }>();
 /**
@@ -169,17 +180,20 @@ const panelCache = new WeakMap<ChunkPanels, { faulty: number[]; state: string }>
  * are all rewritten only when the blackout/dim state changes; otherwise just its faulty tubes.
  * Returns the exposure multiplier.
  */
-function updatePanels(timeSec: number, blackout: { x: number; z: number; radius: number } | null, dim: boolean): number {
+function updatePanels(timeSec: number, blackout: { x: number; z: number; radius: number } | null, dim: boolean, dt: number): number {
   const state = `${blackout ? `${blackout.x},${blackout.z}` : '-'}|${dim}`;
-  let nearest = 1;
   const write = (p: ChunkPanels, i: number) => {
     const c = p.cells[i];
+    const id = c.y * level.grid.width + c.x;
     const out = blackout !== null && Math.hypot(c.wx - blackout.x, c.wz - blackout.z) <= blackout.radius;
-    const lvl = panelLevel(p.base[i], timeSec, c.y * level.grid.width + c.x, lightSeed, out, dim);
+    const lvl = panelLevel(p.base[i], timeSec, id, lightSeed, out, dim);
     p.mesh.setColorAt(i, panelColor.setScalar(lvl));
-    // The room's direct light follows the tube (a dead dark-zone panel gives none).
-    panelMap.set(c.x, c.y, p.base[i] < 1 ? 0 : lvl);
+    // Ceiling bounce and the real lights follow the tube (a dead dark-zone panel gives none).
+    const live = p.base[i] < 1 ? 0 : lvl;
+    panelMap.set(c.x, c.y, live);
+    panelLevels.set(id, live);
   };
+  const candidates: { id: number; d: number; x: number; z: number }[] = [];
   for (const p of streamer.panels()) {
     let cache = panelCache.get(p);
     if (!cache) {
@@ -196,15 +210,25 @@ function updatePanels(timeSec: number, blackout: { x: number; z: number; radius:
     if (full || cache.faulty.length > 0) {
       if (p.mesh.instanceColor) p.mesh.instanceColor.needsUpdate = true;
     }
-    // A faulty tube close overhead makes the whole view breathe with it.
-    for (const i of cache.faulty) {
+    for (let i = 0; i < p.cells.length; i++) {
+      if (p.base[i] < 1) continue;
       const c = p.cells[i];
-      const fall = lightFalloff(Math.hypot(c.wx - player.pos.x, c.wz - player.pos.z));
-      if (fall > 0) nearest = Math.min(nearest, 1 - (1 - flicker(timeSec, c.y * level.grid.width + c.x, lightSeed)) * fall);
+      const d = Math.hypot(c.wx - player.pos.x, c.wz - player.pos.z);
+      if (d < SHADOW_LIGHT_REACH) candidates.push({ id: c.y * level.grid.width + c.x, d, x: c.wx, z: c.wz });
     }
   }
   panelMap.commit();
-  return sceneExposure(blackout !== null, dim, nearest);
+  // The real, shadow-casting lights go to the nearest working panels, fading out with distance.
+  candidates.sort((a, b) => a.d - b.d);
+  const wanted = candidates.slice(0, SHADOW_LIGHTS).map((c) => {
+    panelPositions.set(c.id, { x: c.x, z: c.z });
+    const distanceFade = Math.min(1, Math.max(0, (SHADOW_LIGHT_REACH - c.d) / 3));
+    return { id: c.id, target: (panelLevels.get(c.id) ?? 1) * distanceFade };
+  });
+  updateSlots(shadowSlots, wanted, dt, SHADOW_FADE);
+  shadowLights.update(shadowSlots, (id) => panelPositions.get(id));
+  // Flicker is local now (real lights); only blackouts and the Howler's warning move the exposure.
+  return sceneExposure(blackout !== null, dim, 1);
 }
 
 /**
@@ -437,7 +461,7 @@ renderer.setAnimationLoop((now: number) => {
   // Presence/warning timers run on the tape clock, so they don't expire while paused.
   const gameMs = recordedSec * 1000;
   const activeBlackout = blackout && gameMs < blackout.until ? { x: blackout.x, z: blackout.z, radius: BLACKOUT_RADIUS } : null;
-  const exposure = updatePanels(now / 1000, activeBlackout, gameMs < dimUntil);
+  const exposure = updatePanels(now / 1000, activeBlackout, gameMs < dimUntil, frameDt);
   // Night vision has its own gain: a blackout or dim doesn't blind the IR picture.
   renderer.toneMappingExposure = EXPOSURE * (exposure + (1 - exposure) * camcorder.nvBlend);
   props.update(now / 1000);

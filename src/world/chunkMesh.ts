@@ -341,7 +341,12 @@ export function buildChunk(grid: Grid, cx: number, cy: number, mats: WorldMateri
     outlets(outletSpots(quads), grid, light, mats.outlet),
   ];
   for (const m of meshes) {
-    if (m) group.add(m);
+    if (!m) continue;
+    // Everything but the floor, ceiling and grid casts shadow from the real panel lights.
+    const flat = m.material === mats.floor || m.material === mats.ceiling || m.material === mats.tbar;
+    m.castShadow = !flat;
+    m.receiveShadow = m.material !== mats.ceiling && m.material !== mats.tbar;
+    group.add(m);
   }
   if (cells.length > 0) {
     const mesh = new THREE.InstancedMesh(trofferGeo, mats.troffer, cells.length);
