@@ -1,5 +1,6 @@
 import type { Rng } from '../core/rng';
 import type { Vec2 } from '../player/collision';
+import { SPEED } from '../player/controller';
 import { CELL_SIZE, cellToWorld, type Grid, type Point, worldToCell } from '../world/grid';
 import { findPath } from './astar';
 import { hasLineOfSight } from './los';
@@ -23,7 +24,7 @@ export interface EntityTuning {
 export const TUNING: Record<EntityKind, EntityTuning> = {
   smiler: { roamSpeed: 0.8, investigateSpeed: 1.8, chaseSpeed: 3.2, sightCells: 10, roamRadius: 6, loseSightSec: 4, searchSec: 6 },
   // Sight 12 cells (24 m) ≈ what the fog lets the player see back; no audio warning exists yet.
-  howler: { roamSpeed: 1.4, investigateSpeed: 2.6, chaseSpeed: 4.5, sightCells: 12, roamRadius: 20, loseSightSec: 4, searchSec: 8 },
+  howler: { roamSpeed: 1.4, investigateSpeed: 2.6, chaseSpeed: SPEED.sprint, sightCells: 12, roamRadius: 20, loseSightSec: 4, searchSec: 8 },
 };
 
 /** Metres between centres at which the player is caught. */

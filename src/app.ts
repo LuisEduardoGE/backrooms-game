@@ -21,7 +21,7 @@ import { spawnHowlerCell, spawnSmilerCells } from './game/spawns';
 import { createLightPool } from './lighting/lightPool';
 import { nearestLitLightsAt, panelGlow } from './lighting/lights';
 import { addBattery, createCamcorder, toggleNightVision, updateCamcorder } from './player/camcorder';
-import { applyLook, createPlayer, NO_INPUT, updatePlayer } from './player/controller';
+import { applyLook, createPlayer, headBob, NO_INPUT, updatePlayer } from './player/controller';
 import { createDebugHud } from './ui/debugHud';
 import { createHud } from './ui/hud';
 import { createNoteReader } from './ui/noteReader';
@@ -320,7 +320,10 @@ renderer.setAnimationLoop((now: number) => {
     player.prevEyeHeight + (player.eyeHeight - player.prevEyeHeight) * a,
     player.prevPos.z + (player.pos.z - player.prevPos.z) * a,
   );
-  camera.rotation.set(player.pitch, player.yaw, 0);
+  // Camcorder in hand: a small dip on each footstep and a slight sway.
+  const bob = headBob(player);
+  camera.position.y += bob.y;
+  camera.rotation.set(player.pitch, player.yaw, bob.roll);
   if (phase === 'escaped' && endedAt !== null) {
     // Noclip: drop through the floor.
     const fall = (now - endedAt) / 1000;
