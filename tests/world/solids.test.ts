@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { hasFullFace, solidRects, WALL_THICKNESS } from '../../src/world/solids';
-import { Cell, createGrid, setCell } from '../../src/world/grid';
+import { Cell, createGrid, PILLAR_SIZE, setCell } from '../../src/world/grid';
 
 /** 7×7 grid, all floor inside a wall border, so walls can be placed by hand. */
 function open() {
@@ -36,11 +36,12 @@ describe('solidRects', () => {
     expect(solidRects(g, 2, 2)).toEqual([]);
   });
 
-  it('keeps pillars as their 0.8 m box', () => {
+  it('keeps pillars as their PILLAR_SIZE box, centred in the cell', () => {
     const g = open();
     setCell(g, 3, 3, Cell.Pillar);
     const [r] = solidRects(g, 3, 3);
-    for (const [k, v] of Object.entries({ minX: 6.6, maxX: 7.4, minZ: 6.6, maxZ: 7.4 })) expect(r[k as keyof typeof r]).toBeCloseTo(v, 9);
+    const h = PILLAR_SIZE / 2;
+    for (const [k, v] of Object.entries({ minX: 7 - h, maxX: 7 + h, minZ: 7 - h, maxZ: 7 + h })) expect(r[k as keyof typeof r]).toBeCloseTo(v, 9);
   });
 });
 

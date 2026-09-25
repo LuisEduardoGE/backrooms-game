@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { moveWithCollision, PLAYER_RADIUS } from '../../src/player/collision';
-import { Cell, createGrid, setCell } from '../../src/world/grid';
+import { Cell, createGrid, PILLAR_SIZE, setCell } from '../../src/world/grid';
 import { WALL_THICKNESS } from '../../src/world/solids';
 
 /** Thin walls: the border slab faces sit 0.9 m inside the wall cells (x = 1.1 and 8.9 for room(5)). */
@@ -42,11 +42,11 @@ describe('moveWithCollision', () => {
 
   it('collides with the thin pillar box, not the whole pillar cell', () => {
     const g = room(7);
-    setCell(g, 3, 3, Cell.Pillar); // cell spans [6, 8]; pillar box spans [6.6, 7.4]
+    setCell(g, 3, 3, Cell.Pillar); // cell spans [6, 8]; pillar box spans 7 ± PILLAR_SIZE / 2
     const stopped = moveWithCollision(g, { x: 5, z: 7 }, 1.5, 0);
-    expect(stopped.x).toBeCloseTo(6.6 - PLAYER_RADIUS, 3);
+    expect(stopped.x).toBeCloseTo(7 - PILLAR_SIZE / 2 - PLAYER_RADIUS, 3);
     // Beside the pillar (outside its box on z) the player may stand inside the pillar's cell.
-    const beside = moveWithCollision(g, { x: 5, z: 6.2 }, 1.5, 0);
+    const beside = moveWithCollision(g, { x: 5, z: 7 - PILLAR_SIZE / 2 - PLAYER_RADIUS - 0.05 }, 1.5, 0);
     expect(beside.x).toBeCloseTo(6.5, 5);
   });
 });

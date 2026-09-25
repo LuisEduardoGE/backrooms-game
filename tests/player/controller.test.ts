@@ -3,6 +3,8 @@ import {
   applyLook, createPlayer, EYE_HEIGHT, headBob, MAX_PITCH, type MoveInput, NO_INPUT, SPEED, updatePlayer,
 } from '../../src/player/controller';
 import { Cell, createGrid, setCell } from '../../src/world/grid';
+import { PLAYER_RADIUS } from '../../src/player/collision';
+import { WALL_THICKNESS } from '../../src/world/solids';
 
 const open = (() => {
   const g = createGrid(20, 20);
@@ -77,8 +79,8 @@ describe('updatePlayer', () => {
 
   it('is stopped by walls', () => {
     const p = run(createPlayer({ x: 20, z: 20 }), input({ right: 1, sprint: true }), 100);
-    // Border wall cell 19 spans 38..40: its thin slab's face is at 38.9.
-    expect(p.pos.x).toBeCloseTo(38.9 - 0.3, 3);
+    // Border wall cell 19 spans 38..40: its slab's face is at 39 − WALL_THICKNESS / 2.
+    expect(p.pos.x).toBeCloseTo(39 - WALL_THICKNESS / 2 - PLAYER_RADIUS, 3);
     expect(p.vel.x).toBe(0);
   });
 

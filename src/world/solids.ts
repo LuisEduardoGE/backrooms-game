@@ -1,7 +1,7 @@
 import { Cell, CELL_SIZE, type Dir, DIR_STEP, type Grid, getCell, PILLAR_SIZE } from './grid';
 
-/** Walls are thin partitions (metres) running through the middle of their grid cell. */
-export const WALL_THICKNESS = 0.2;
+/** Walls are 35 cm drywall partitions running through the middle of their grid cell. */
+export const WALL_THICKNESS = 0.35;
 
 export interface Rect {
   minX: number;

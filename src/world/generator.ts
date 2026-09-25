@@ -39,15 +39,18 @@ export interface GenOptions {
   widenChance: number;
 }
 
+/** Cells between columns in a pillar hall (8 m, like an open-plan office grid). */
+const PILLAR_SPACING = 4;
+
 export const DEFAULT_GEN: GenOptions = {
   width: 200,
   height: 200,
-  minLeaf: 5,
-  maxLeaf: 16,
+  minLeaf: 6,
+  maxLeaf: 22,
   corridorChance: 0.12,
-  keepBigLeafChance: 0.2,
+  keepBigLeafChance: 0.3,
   extraConnectionRatio: 0.2,
-  pillarHallChance: 0.5,
+  pillarHallChance: 0.6,
   darkFraction: 0.15,
   exitDistanceRatio: 0.7,
   mergeChance: 0.4,
@@ -129,8 +132,8 @@ export function buildRooms(grid: Grid, rng: Rng, o: GenOptions): Room[] {
     }
     if (room.w >= 7 && room.h >= 7 && rng.chance(o.pillarHallChance)) {
       room.pillared = true;
-      for (let y = room.y + 2; y <= room.y + room.h - 3; y += 3) {
-        for (let x = room.x + 2; x <= room.x + room.w - 3; x += 3) setCell(grid, x, y, Cell.Pillar);
+      for (let y = room.y + 2; y <= room.y + room.h - 3; y += PILLAR_SPACING) {
+        for (let x = room.x + 2; x <= room.x + room.w - 3; x += PILLAR_SPACING) setCell(grid, x, y, Cell.Pillar);
       }
     }
     return room;
