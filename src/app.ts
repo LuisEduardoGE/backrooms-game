@@ -6,6 +6,7 @@ import { autopilotInput, createAutopilot } from './game/autopilot';
 import { createInput } from './core/input';
 import { createFixedStepper, FIXED_DT } from './core/loop';
 import { createRng, deriveSeed } from './core/rng';
+import { nudgeSensitivity, parseSensitivity, sensitivityLabel } from './core/sensitivity';
 import { createVhsComposer } from './fx/composer';
 import { glitchAmount } from './fx/glitch';
 import { createDirector, type DirectorEvent, updateDirector } from './game/director';
@@ -130,6 +131,26 @@ let recordedSec = 0;
 let phase: Phase = 'title';
 const isLocked = () => document.pointerLockElement === canvas;
 const input = createInput(window, isLocked);
+const SENSITIVITY_KEY = 'backrooms.mouse';
+let sensitivity = (() => {
+  try {
+    return parseSensitivity(localStorage.getItem(SENSITIVITY_KEY));
+  } catch {
+    return parseSensitivity(null);
+  }
+})();
+
+/**
+ * Raw (unaccelerated) mouse input so turning doesn't depend on the OS pointer acceleration;
+ * falls back to a plain lock where unsupported. Rejections (e.g. re-locking within ~1 s of Esc)
+ * are swallowed — the next click works.
+ */
+function lockPointer(): void {
+  const request = canvas.requestPointerLock as (options?: { unadjustedMovement?: boolean }) => Promise<void> | void;
+  Promise.resolve(request.call(canvas, { unadjustedMovement: true })).catch(() =>
+    Promise.resolve(canvas.requestPointerLock()).catch(() => undefined),
+  );
+}
 
 function showPhase(): void {
   const over = phase === 'ended' || phase === 'escaped';
@@ -203,8 +224,7 @@ if (autopilot) {
 overlay.addEventListener('click', () => {
   if (phase !== 'title' && phase !== 'paused') return;
   audio.unlock();
-  // Browsers refuse to re-lock for ~1 s after Esc; swallow that rejection — the next click works.
-  Promise.resolve(canvas.requestPointerLock()).catch(() => undefined);
+  lockPointer();
 });
 document.addEventListener('pointerlockerror', () => {
   lockError.hidden = false;
@@ -214,12 +234,24 @@ for (const button of document.querySelectorAll('.new-tape')) {
   button.addEventListener('click', () => location.assign(tapeUrl(location.href, null)));
 }
 document.addEventListener('pointerlockchange', () => {
-  if (isLocked()) lockError.hidden = true;
+  if (isLocked()) {
+    lockError.hidden = true;
+    input.skipNextMove();
+  }
   input.clear();
   setPhase(isLocked() ? 'lock' : 'unlock');
 });
 window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyM') audio.toggleMute();
+  if ((e.code === 'BracketLeft' || e.code === 'BracketRight') && !e.repeat) {
+    sensitivity = nudgeSensitivity(sensitivity, e.code === 'BracketRight' ? 1 : -1);
+    try {
+      localStorage.setItem(SENSITIVITY_KEY, String(sensitivity));
+    } catch {
+      // Storage blocked (private mode): the setting just won't persist.
+    }
+    hud.flash(sensitivityLabel(sensitivity));
+  }
 });
 // A click while reading puts the note down (the pointer is still locked).
 window.addEventListener('mousedown', () => {
@@ -248,7 +280,7 @@ renderer.setAnimationLoop((now: number) => {
     autopilot && playing
       ? autopilotInput(autopilot, player.pos, player.yaw, truePath, frameDt, exitFace)
       : playing
-        ? input.moveInput()
+        ? input.moveInput(sensitivity)
         : NO_INPUT;
   if (playing && input.consumePressed('KeyN')) {
     toggleNightVision(camcorder);

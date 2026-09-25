@@ -19,6 +19,8 @@ export interface Input {
   clear(): void;
   /** Discards mouse movement and key presses built up since the last read; held keys stay held. */
   flush(): void;
+  /** Ignore the next mouse movement (browsers report a jump right after the pointer locks). */
+  skipNextMove(): void;
   dispose(): void;
 }
 
@@ -27,6 +29,7 @@ export function createInput(target: EventTarget, isLocked: () => boolean): Input
   const pressed = new Set<string>();
   let lookX = 0;
   let lookY = 0;
+  let skipMove = false;
 
   const clear = () => {
     down.clear();
@@ -48,6 +51,10 @@ export function createInput(target: EventTarget, isLocked: () => boolean): Input
       'mousemove',
       (e) => {
         if (!isLocked()) return;
+        if (skipMove) {
+          skipMove = false;
+          return;
+        }
         lookX += (e as MouseEvent).movementX;
         lookY += (e as MouseEvent).movementY;
       },
@@ -75,6 +82,9 @@ export function createInput(target: EventTarget, isLocked: () => boolean): Input
       return input;
     },
     clear,
+    skipNextMove() {
+      skipMove = true;
+    },
     flush() {
       lookX = 0;
       lookY = 0;

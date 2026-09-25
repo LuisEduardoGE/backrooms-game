@@ -130,3 +130,14 @@ describe('flush', () => {
     expect(input.consumePressed('KeyN')).toBe(false);
   });
 });
+
+describe('skipNextMove', () => {
+  it('drops the first mouse movement after locking (browsers report a jump there)', () => {
+    const { target, input } = setup(true);
+    input.skipNextMove();
+    target.dispatchEvent(mouse(900, 400)); // the spike
+    target.dispatchEvent(mouse(10, 0));
+    expect(input.moveInput(0.01).lookDX).toBeCloseTo(0.1, 6);
+  });
+});
+

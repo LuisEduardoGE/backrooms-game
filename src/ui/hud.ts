@@ -20,6 +20,7 @@ export function createHud(parent: HTMLElement) {
     <div class="osd osd-bl"><div class="osd-time"></div><div class="osd-date"></div></div>
     <div class="osd osd-br"><span class="osd-nv">NIGHT VISION</span></div>
     <div class="osd-prompt" hidden></div>
+    <div class="osd-toast" hidden></div>
   `;
   parent.append(root);
 
@@ -33,6 +34,8 @@ export function createHud(parent: HTMLElement) {
   const battery = el('.osd-battery');
   const bars = Array.from(battery.querySelectorAll('i'));
   const prompt = el('.osd-prompt');
+  const toast = el('.osd-toast');
+  let toastTimer: ReturnType<typeof setTimeout> | undefined;
   let lastPrompt: string | null = null;
   let lastTime = '';
   let lastDate = '';
@@ -40,6 +43,15 @@ export function createHud(parent: HTMLElement) {
   return {
     setVisible(visible: boolean): void {
       root.hidden = !visible;
+    },
+    /** A short-lived readout (e.g. mouse sensitivity) at the top of the frame. */
+    flash(text: string): void {
+      toast.textContent = text;
+      toast.hidden = false;
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => {
+        toast.hidden = true;
+      }, 1200);
     },
     setPrompt(text: string | null): void {
       if (text === lastPrompt) return;

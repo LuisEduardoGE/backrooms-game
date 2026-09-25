@@ -303,3 +303,17 @@ body {
   max-width: 100%;
   height: auto;
 }
+
+.osd-toast {
+  position: absolute;
+  left: 50%;
+  top: 6vh;
+  transform: translateX(-50%);
+  padding: 0.1em 0.6em;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.osd-toast[hidden] {
+  display: none;
+}
+
