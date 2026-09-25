@@ -33,6 +33,10 @@ export interface GenOptions {
   darkFraction: number;
   /** Minimum start→exit straight-line distance as a fraction of width. */
   exitDistanceRatio: number;
+  /** Chance two neighbouring rooms are merged into one hall (their shared wall mostly removed). */
+  mergeChance: number;
+  /** Chance a doorway is widened by a cell on each side. */
+  widenChance: number;
 }
 
 export const DEFAULT_GEN: GenOptions = {
@@ -46,6 +50,8 @@ export const DEFAULT_GEN: GenOptions = {
   pillarHallChance: 0.5,
   darkFraction: 0.15,
   exitDistanceRatio: 0.7,
+  mergeChance: 0.4,
+  widenChance: 0.6,
 };
 
 interface Rect {
@@ -229,6 +235,7 @@ function tryGenerate(layoutSeed: number, o: GenOptions): Omit<Level, 'seed'> | n
   const grid = createGrid(o.width, o.height);
   const rooms = buildRooms(grid, rng, o);
   connectRooms(grid, rooms, rng, o);
+  openUp(grid, rng, o);
   const startRoom = pickStartRoom(rooms, rng, o);
   const start = pickFloorCell(grid, startRoom, rng);
   assignDarkZones(grid, rooms, startRoom.id, rng, o.darkFraction);
@@ -394,3 +401,67 @@ function pickExit(grid: Grid, start: Point, rng: Rng, o: GenOptions): Point | nu
   }
   return candidates.length > 0 ? rng.pick(candidates) : null;
 }
+
+/** Wall cells that sit between two different rooms (left/right or above/below), keyed by room pair. */
+function separatorsByPair(grid: Grid): Map<string, Point[]> {
+  const roomAt = (x: number, y: number): number =>
+    getCell(grid, x, y) === Cell.Floor ? grid.room[y * grid.width + x] : -1;
+  const pairs = new Map<string, Point[]>();
+  const add = (a: number, b: number, p: Point) => {
+    const key = a < b ? `${a}:${b}` : `${b}:${a}`;
+    const list = pairs.get(key);
+    if (list) list.push(p);
+    else pairs.set(key, [p]);
+  };
+  for (let y = 1; y < grid.height - 1; y++) {
+    for (let x = 1; x < grid.width - 1; x++) {
+      if (getCell(grid, x, y) !== Cell.Wall) continue;
+      const l = roomAt(x - 1, y);
+      const r = roomAt(x + 1, y);
+      if (l >= 0 && r >= 0 && l !== r) {
+        add(l, r, { x, y });
+        continue;
+      }
+      const u = roomAt(x, y - 1);
+      const d = roomAt(x, y + 1);
+      if (u >= 0 && d >= 0 && u !== d) add(u, d, { x, y });
+    }
+  }
+  return pairs;
+}
+
+/**
+ * Level 0 is open office space, not closed rooms: merge some neighbouring rooms into halls (most
+ * of their shared wall goes, leaving stubs) and widen the remaining doorways. Only walls between
+ * two rooms are ever removed, so connectivity can only grow.
+ */
+function openUp(grid: Grid, rng: Rng, o: GenOptions): void {
+  const MERGE_KEEP = 0.15; // share of a merged wall left standing as partition stubs
+  for (const cells of separatorsByPair(grid).values()) {
+    if (rng.chance(o.mergeChance)) {
+      for (const c of cells) if (!rng.chance(MERGE_KEEP)) setCell(grid, c.x, c.y, Cell.Floor);
+    }
+  }
+  // Widen doorways: a doorway is floor with no room id; grow it along its wall line.
+  const doors: Point[] = [];
+  for (let y = 1; y < grid.height - 1; y++) {
+    for (let x = 1; x < grid.width - 1; x++) {
+      const i = y * grid.width + x;
+      if (grid.cells[i] === Cell.Floor && grid.room[i] < 0) doors.push({ x, y });
+    }
+  }
+  const isRoomFloor = (x: number, y: number) => getCell(grid, x, y) === Cell.Floor && grid.room[y * grid.width + x] >= 0;
+  for (const d of doors) {
+    if (!rng.chance(o.widenChance)) continue;
+    // Horizontal passage (rooms left/right) → the wall runs vertically, so widen up/down; and vice versa.
+    const vertical = isRoomFloor(d.x - 1, d.y) && isRoomFloor(d.x + 1, d.y);
+    const along: Point[] = vertical ? [{ x: d.x, y: d.y - 1 }, { x: d.x, y: d.y + 1 }] : [{ x: d.x - 1, y: d.y }, { x: d.x + 1, y: d.y }];
+    for (const c of along) {
+      const between = vertical
+        ? isRoomFloor(c.x - 1, c.y) && isRoomFloor(c.x + 1, c.y)
+        : isRoomFloor(c.x, c.y - 1) && isRoomFloor(c.x, c.y + 1);
+      if (getCell(grid, c.x, c.y) === Cell.Wall && between) setCell(grid, c.x, c.y, Cell.Floor);
+    }
+  }
+}
+

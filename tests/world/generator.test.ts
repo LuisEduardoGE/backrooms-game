@@ -124,4 +124,26 @@ describe('generateLevel', () => {
       expect(hasFullFace(grid, exit.x, exit.y, exitSide)).toBe(true);
     }
   });
+
+  it('opens the map up into big halls with leftover partitions (Level 0 is open office space, not closed rooms)', () => {
+    const walls = (lv: ReturnType<typeof generateLevel>) => {
+      let n = 0;
+      for (let y = 1; y < lv.grid.height - 1; y++) for (let x = 1; x < lv.grid.width - 1; x++) if (getCell(lv.grid, x, y) === Cell.Wall) n++;
+      return n;
+    };
+    for (const seed of [7, 42]) {
+      const open = generateLevel(seed);
+      const closed = generateLevel(seed, { mergeChance: 0, widenChance: 0 });
+      expect(walls(open)).toBeLessThan(walls(closed) * 0.85);
+    }
+  });
+
+  it('keeps every floor cell reachable after opening up', () => {
+    for (const seed of [7, 42, 99]) {
+      const { grid, start } = generateLevel(seed);
+      const d = bfsDistances(grid, start.x, start.y);
+      for (let i = 0; i < grid.cells.length; i++) if (grid.cells[i] === Cell.Floor) expect(d[i]).toBeGreaterThanOrEqual(0);
+    }
+  });
 });
+
