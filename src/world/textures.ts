@@ -5,10 +5,10 @@ const SIZE = 256;
 /** Bright troffer panel inside a 3×3 drop-ceiling tile layout (canvas pixels). */
 const PANEL = { x: SIZE / 3, y: SIZE / 6, w: SIZE / 3, h: (SIZE * 2) / 3 };
 
-function canvasTexture(draw: (ctx: CanvasRenderingContext2D) => void): THREE.CanvasTexture {
+function canvasTexture(draw: (ctx: CanvasRenderingContext2D) => void, size = SIZE): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
-  canvas.width = SIZE;
-  canvas.height = SIZE;
+  canvas.width = size;
+  canvas.height = size;
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('2D canvas unavailable');
   draw(ctx);
@@ -21,8 +21,8 @@ function canvasTexture(draw: (ctx: CanvasRenderingContext2D) => void): THREE.Can
 }
 
 /** Adds per-pixel luminance noise; `strength` 0..1. */
-function noise(ctx: CanvasRenderingContext2D, rng: Rng, strength: number): void {
-  const img = ctx.getImageData(0, 0, SIZE, SIZE);
+function noise(ctx: CanvasRenderingContext2D, rng: Rng, strength: number, size = SIZE): void {
+  const img = ctx.getImageData(0, 0, size, size);
   const d = img.data;
   for (let i = 0; i < d.length; i += 4) {
     const n = (rng.next() - 0.5) * 255 * strength;
@@ -51,20 +51,43 @@ function drawWallpaper(ctx: CanvasRenderingContext2D, rng: Rng): void {
   ctx.fillRect(0, SIZE * 0.8, SIZE, SIZE * 0.2);
 }
 
-function drawCarpet(ctx: CanvasRenderingContext2D, rng: Rng): void {
-  ctx.fillStyle = '#9a8544';
-  ctx.fillRect(0, 0, SIZE, SIZE);
-  for (let i = 0; i < 6; i++) {
-    const x = rng.range(0, SIZE);
-    const y = rng.range(0, SIZE);
-    const r = rng.range(20, 70);
-    const g = ctx.createRadialGradient(x, y, 0, x, y, r);
-    g.addColorStop(0, 'rgba(70, 55, 20, 0.25)');
-    g.addColorStop(1, 'rgba(70, 55, 20, 0)');
-    ctx.fillStyle = g;
-    ctx.fillRect(x - r, y - r, r * 2, r * 2);
+/** The carpet covers CARPET_METRES (8 m) of floor per repeat, laid in world space. */
+const CARPET_SIZE = 512;
+
+/** Draws a soft blob, repeated across the edges so the texture tiles seamlessly. */
+function wrappedBlob(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, rgba: string, size: number): void {
+  for (const ox of [-size, 0, size]) {
+    for (const oy of [-size, 0, size]) {
+      const cx = x + ox;
+      const cy = y + oy;
+      if (cx + r < 0 || cy + r < 0 || cx - r > size || cy - r > size) continue;
+      const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+      g.addColorStop(0, rgba);
+      g.addColorStop(1, rgba.replace(/[\d.]+\)$/, '0)'));
+      ctx.fillStyle = g;
+      ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+    }
   }
-  noise(ctx, rng, 0.22);
+}
+
+/** Level 0 carpet: flat mustard-beige, low pile, softly mottled, a few damp patches. */
+function drawCarpet(ctx: CanvasRenderingContext2D, rng: Rng): void {
+  const S = CARPET_SIZE;
+  ctx.fillStyle = '#b39c60';
+  ctx.fillRect(0, 0, S, S);
+  // Broad, very soft light/dark mottling (worn and matted areas).
+  for (let i = 0; i < 26; i++) {
+    const light = rng.chance(0.5);
+    wrappedBlob(ctx, rng.range(0, S), rng.range(0, S), rng.range(60, 180), light ? 'rgba(200, 180, 110, 0.10)' : 'rgba(90, 75, 35, 0.10)', S);
+  }
+  // A few damp patches: irregular clusters of darker blobs.
+  for (let i = 0; i < 3; i++) {
+    const x = rng.range(0, S);
+    const y = rng.range(0, S);
+    for (let k = 0; k < 6; k++) wrappedBlob(ctx, x + rng.range(-30, 30), y + rng.range(-30, 30), rng.range(20, 55), 'rgba(70, 58, 25, 0.16)', S);
+  }
+  // Low-pile fibre grain.
+  noise(ctx, rng, 0.16, S);
 }
 
 function drawCeilingTiles(ctx: CanvasRenderingContext2D, rng: Rng): void {
@@ -112,7 +135,8 @@ export function createWorldMaterials(rng: Rng): WorldMaterials {
   const panel = canvasTexture((ctx) => drawLightPanel(ctx, rng));
   return {
     wall: new THREE.MeshStandardMaterial({ map: canvasTexture((ctx) => drawWallpaper(ctx, rng)), roughness: 0.95 }),
-    floor: new THREE.MeshStandardMaterial({ map: canvasTexture((ctx) => drawCarpet(ctx, rng)), roughness: 1 }),
+    // Vertex colours carry the baked light (see chunkMesh floorPlane).
+    floor: new THREE.MeshStandardMaterial({ map: canvasTexture((ctx) => drawCarpet(ctx, rng), CARPET_SIZE), roughness: 1, vertexColors: true }),
     ceiling: new THREE.MeshStandardMaterial({ map: canvasTexture((ctx) => drawCeilingTiles(ctx, rng)), roughness: 0.9 }),
     lightOn: new THREE.MeshStandardMaterial({
       map: panel,

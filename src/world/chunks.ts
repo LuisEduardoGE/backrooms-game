@@ -1,6 +1,6 @@
 export const CHUNK_CELLS = 16;
-/** Chunks loaded around the player. Fog hides everything past ~35 m; radius 2 keeps ≥ 64 m loaded. */
-export const LOAD_RADIUS = 2;
+/** Chunks loaded around the player (≥ 96 m). Built one per frame, so the wider view costs no hitches. */
+export const LOAD_RADIUS = 3;
 
 export type ChunkKey = string;
 

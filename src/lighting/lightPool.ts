@@ -3,7 +3,8 @@ import { cellToWorld, type Grid, WALL_HEIGHT } from '../world/grid';
 import { flicker, lightFalloff, nearestLitLightsAt } from './lights';
 
 export const POOL_SIZE = 6;
-const BASE_INTENSITY = 14;
+/** Accent only: the baked light does the heavy lifting. */
+const BASE_INTENSITY = 5;
 const LIGHT_RANGE = 8;
 /** Light level while the Howler's warning holds the lights down (steady, not strobing). */
 const DIM_LEVEL = 0.35;

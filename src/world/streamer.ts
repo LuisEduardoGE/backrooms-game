@@ -1,5 +1,5 @@
 import type * as THREE from 'three';
-import { buildChunk, disposeChunk } from './chunkMesh';
+import { buildChunk, disposeChunk, type LightField } from './chunkMesh';
 import { type ChunkKey, chunkKey, chunkOf, chunksAround, LOAD_RADIUS, parseChunkKey, planChunkWork } from './chunks';
 import type { Grid } from './grid';
 import type { WorldMaterials } from './textures';
@@ -9,7 +9,7 @@ import type { WorldMaterials } from './textures';
  * unloads at once and queues new chunks nearest-first, building at most one per frame so crossing
  * into a new area never hitches — except the chunk the player stands in, which is built immediately.
  */
-export function createChunkStreamer(scene: THREE.Scene, grid: Grid, mats: WorldMaterials) {
+export function createChunkStreamer(scene: THREE.Scene, grid: Grid, mats: WorldMaterials, light: LightField) {
   const loaded = new Map<ChunkKey, THREE.Group>();
   let currentChunk: ChunkKey | null = null;
   let queue: ChunkKey[] = [];
@@ -17,7 +17,7 @@ export function createChunkStreamer(scene: THREE.Scene, grid: Grid, mats: WorldM
   const build = (key: ChunkKey) => {
     if (loaded.has(key)) return;
     const { cx, cy } = parseChunkKey(key);
-    const group = buildChunk(grid, cx, cy, mats);
+    const group = buildChunk(grid, cx, cy, mats, light);
     scene.add(group);
     loaded.set(key, group);
   };

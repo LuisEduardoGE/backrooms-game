@@ -1,0 +1,42 @@
+import { describe, expect, it } from 'vitest';
+import { AMBIENT_DARK, cellLight } from '../../src/lighting/bake';
+import { Cell, createGrid, setCell } from '../../src/world/grid';
+
+/** 21×21 open room (floor 1..19): panels on every even/even floor cell. */
+function room() {
+  const g = createGrid(21, 21);
+  for (let y = 1; y <= 19; y++) for (let x = 1; x <= 19; x++) setCell(g, x, y, Cell.Floor);
+  return g;
+}
+
+describe('cellLight', () => {
+  it('lights an open, powered area evenly and brightly — everywhere, not just near you', () => {
+    const g = room();
+    const samples = [cellLight(g, 10, 10), cellLight(g, 11, 11), cellLight(g, 5, 14), cellLight(g, 15, 4)];
+    for (const v of samples) {
+      expect(v).toBeGreaterThan(0.85);
+      expect(v).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it('leaves unpowered (dark-zone) areas dark', () => {
+    const g = room();
+    for (let i = 0; i < g.dark.length; i++) g.dark[i] = 1;
+    expect(cellLight(g, 10, 10)).toBeCloseTo(AMBIENT_DARK, 6);
+  });
+
+  it('fades toward a dark zone and is blocked by walls', () => {
+    const g = room();
+    // Right half dark, a wall between the halves except a gap.
+    for (let y = 1; y <= 19; y++) for (let x = 11; x <= 19; x++) g.dark[y * 21 + x] = 1;
+    const edge = cellLight(g, 11, 10); // just inside the dark half, next to lit panels
+    const deep = cellLight(g, 17, 10);
+    expect(edge).toBeGreaterThan(deep);
+    expect(deep).toBeCloseTo(AMBIENT_DARK, 6);
+
+    const walled = room();
+    for (let y = 1; y <= 19; y++) for (let x = 11; x <= 19; x++) walled.dark[y * 21 + x] = 1;
+    for (let y = 1; y <= 19; y++) setCell(walled, 10, y, Cell.Wall);
+    expect(cellLight(walled, 11, 10)).toBeLessThan(edge);
+  });
+});

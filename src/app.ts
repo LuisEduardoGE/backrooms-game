@@ -19,6 +19,7 @@ import {
   createSanity, distortionFromSanity, drinkAlmondWater, fearDrain, isInsane, jolt, updateSanity,
 } from './game/sanity';
 import { spawnHowlerCell, spawnSmilerCells } from './game/spawns';
+import { createLightField } from './lighting/bake';
 import { createLightPool } from './lighting/lightPool';
 import { nearestLitLightsAt, panelGlow } from './lighting/lights';
 import { addBattery, createCamcorder, toggleNightVision, updateCamcorder } from './player/camcorder';
@@ -39,7 +40,8 @@ import { createProps } from './world/props';
 import { createChunkStreamer } from './world/streamer';
 import { createWorldMaterials } from './world/textures';
 
-const FOG_COLOR = 0x3b3318;
+/** A warm, pale haze: Level 0 fades into yellow, not into darkness. */
+const FOG_COLOR = 0x8a7c4a;
 /** Peak intensity of the camcorder's infrared illuminator in night vision. */
 const IR_INTENSITY = 6;
 
@@ -62,8 +64,9 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(FOG_COLOR);
-scene.fog = new THREE.FogExp2(FOG_COLOR, 0.06);
-scene.add(new THREE.HemisphereLight(0xfff2c4, 0x4a3f1c, 0.3));
+scene.fog = new THREE.FogExp2(FOG_COLOR, 0.028);
+// Even fluorescent fill; per-area brightness (and darkness in dead zones) is baked into the meshes.
+scene.add(new THREE.HemisphereLight(0xfff6d8, 0xc8b47a, 1.6));
 
 const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.05, 120);
 camera.rotation.order = 'YXZ';
@@ -75,7 +78,8 @@ const params = parseParams(window.location.search);
 const seed = params.seed ?? Math.floor(Math.random() * 0xffffffff) >>> 0;
 const level = generateLevel(seed);
 const materials = createWorldMaterials(createRng(deriveSeed(seed, 'textures')));
-const streamer = createChunkStreamer(scene, level.grid, materials);
+const lightField = createLightField(level.grid);
+const streamer = createChunkStreamer(scene, level.grid, materials, lightField);
 // Build the whole starting area up front, behind the title screen, so there's no pop-in at the start.
 streamer.update(level.start.x, level.start.y);
 streamer.flush();
