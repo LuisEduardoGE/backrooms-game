@@ -24,7 +24,7 @@ function hash(a: number, b: number, salt: number): number {
 
 /** Share of ceiling tiles per kind (doubled in unpowered zones, where the building is decaying). */
 const CEILING_ODDS: readonly [CeilingKind, number][] = [
-  ['stain', 0.035],
+  ['stain', 0.014],
   ['vent', 0.008],
   ['missing', 0.006],
   ['hanging', 0.003],

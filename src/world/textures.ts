@@ -1,10 +1,10 @@
 import * as THREE from 'three';
 import type { Rng } from '../core/rng';
-import carpetColor from '../assets/textures/Carpet016/Color.jpg';
-import carpetNormal from '../assets/textures/Carpet016/NormalGL.jpg';
-import carpetRough from '../assets/textures/Carpet016/Roughness.jpg';
-import ceilingColor from '../assets/textures/OfficeCeiling001/Color.jpg';
-import ceilingNormal from '../assets/textures/OfficeCeiling001/NormalGL.jpg';
+import carpetColor from '../assets/textures/YasuCarpet01/Color.jpg';
+import carpetNormal from '../assets/textures/YasuCarpet01/NormalGL.jpg';
+import carpetRough from '../assets/textures/YasuCarpet01/Roughness.jpg';
+import ceilingColor from '../assets/textures/YasuCeiling01/Color.jpg';
+import ceilingNormal from '../assets/textures/YasuCeiling01/NormalGL.jpg';
 import paperColor from '../assets/textures/Wallpaper001C/Color.jpg';
 import paperRough from '../assets/textures/Wallpaper001C/Roughness.jpg';
 import stainedColor from '../assets/textures/Wallpaper002B/Color.jpg';
@@ -13,6 +13,7 @@ import backroomsNormal from '../assets/textures/BackroomsWallpaperOGA/NormalGL.j
 import backroomsRough from '../assets/textures/BackroomsWallpaperOGA/Roughness.jpg';
 import type { PanelMap } from '../lighting/panelMap';
 import { withPanelLights } from '../lighting/panelLights';
+import { CELL_SIZE } from './grid';
 import { heightToNormal } from './normalMap';
 
 /**
@@ -22,13 +23,13 @@ import { heightToNormal } from './normalMap';
 export const TEXTURE_METRES = {
   /** One wallpaper sheet: 0.6 m — the scan's eight chevron columns at the photo's 7.5 cm spacing. */
   wallpaper: 0.6,
-  carpet: 2.5,
-  /** OfficeCeiling001 has 6×6 tiles per texture → 2/3 m tiles, exactly 3 per 2 m cell. */
-  ceiling: 4,
+  carpet: 2,
+  /** Yasu's ceiling scan holds 2×2 tiles (its grid at the edges and middle) → 2/3 m tiles, 3 per 2 m cell. */
+  ceiling: (CELL_SIZE / 3) * 2,
 } as const;
 
 /** Ceiling tile edge (metres) — troffers snap to this grid. */
-export const CEILING_TILE = TEXTURE_METRES.ceiling / 6;
+export const CEILING_TILE = CELL_SIZE / 3;
 
 const COLOR_SIZE = 2048;
 /** Per-panel light for the shader-lit surfaces (see withPanelLights). */
@@ -156,13 +157,13 @@ function wallpaperNormal(paper: HTMLImageElement): THREE.DataTexture {
   return tex;
 }
 
-/** Carpet016 is a clean beige low-pile; Level 0's is flat khaki, the same family as the walls. */
+/** Yasu's Backrooms carpet: flat khaki low pile, lightly warmed and softly mottled with wear. */
 function carpet(photo: HTMLImageElement, rng: Rng): HTMLCanvasElement {
   const S = COLOR_SIZE;
   const [c, ctx] = canvas(S);
   ctx.drawImage(photo, 0, 0, S, S);
   ctx.globalCompositeOperation = 'multiply';
-  ctx.fillStyle = '#bcab68';
+  ctx.fillStyle = '#e6d9a8';
   ctx.fillRect(0, 0, S, S);
   ctx.globalCompositeOperation = 'source-over';
   for (let i = 0; i < 18; i++) {
@@ -178,10 +179,10 @@ function ceiling(photo: HTMLImageElement): HTMLCanvasElement {
   const [c, ctx] = canvas(S);
   ctx.drawImage(photo, 0, 0, S, S);
   // Soften the tile edges painted into the scan: the grid should barely show.
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
   ctx.fillRect(0, 0, S, S);
   ctx.globalCompositeOperation = 'multiply';
-  ctx.fillStyle = '#e9dc9c';
+  ctx.fillStyle = '#f2e7b8';
   ctx.fillRect(0, 0, S, S);
   ctx.globalCompositeOperation = 'source-over';
   return c;
@@ -242,9 +243,9 @@ function stainTexture(): HTMLCanvasElement {
   const S = 256;
   const [c, ctx] = canvas(S);
   const g = ctx.createRadialGradient(S / 2, S / 2, S * 0.05, S / 2, S / 2, S * 0.48);
-  g.addColorStop(0, 'rgba(120, 90, 40, 0.35)');
-  g.addColorStop(0.7, 'rgba(110, 80, 35, 0.45)');
-  g.addColorStop(0.86, 'rgba(90, 62, 25, 0.8)');
+  g.addColorStop(0, 'rgba(130, 100, 50, 0.16)');
+  g.addColorStop(0.7, 'rgba(120, 90, 40, 0.24)');
+  g.addColorStop(0.86, 'rgba(100, 72, 30, 0.5)');
   g.addColorStop(1, 'rgba(90, 62, 25, 0)');
   ctx.fillStyle = g;
   ctx.beginPath();
