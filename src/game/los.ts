@@ -1,17 +1,10 @@
-import { Cell, CELL_SIZE, type Grid, getCell, PILLAR_SIZE, worldToCell } from '../world/grid';
+import { type Grid, worldToCell } from '../world/grid';
+import { solidRects } from '../world/solids';
 
 const SAMPLE_STEP = 0.2;
-const PILLAR_INSET = (CELL_SIZE - PILLAR_SIZE) / 2;
 
 function blocksAt(grid: Grid, x: number, z: number): boolean {
-  const cx = worldToCell(x);
-  const cy = worldToCell(z);
-  const c = getCell(grid, cx, cy);
-  if (c === Cell.Wall) return true;
-  if (c !== Cell.Pillar) return false;
-  const lx = x - cx * CELL_SIZE;
-  const lz = z - cy * CELL_SIZE;
-  return lx > PILLAR_INSET && lx < CELL_SIZE - PILLAR_INSET && lz > PILLAR_INSET && lz < CELL_SIZE - PILLAR_INSET;
+  return solidRects(grid, worldToCell(x), worldToCell(z)).some((r) => x > r.minX && x < r.maxX && z > r.minZ && z < r.maxZ);
 }
 
 /** True when nothing solid lies between two world points (sampled every 0.2 m). */

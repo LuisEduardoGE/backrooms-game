@@ -1,6 +1,6 @@
 export const CHUNK_CELLS = 16;
-/** Chunks loaded around the player. Fog hides everything past ~35 m; radius 2 keeps ≥ 64 m loaded. */
-export const LOAD_RADIUS = 2;
+/** Chunks loaded around the player (≥ 96 m). Built one per frame, so the wider view costs no hitches. */
+export const LOAD_RADIUS = 3;
 
 export type ChunkKey = string;
 
@@ -39,3 +39,22 @@ export function diffChunks(
     toUnload: [...loaded].filter((k) => !wanted.has(k)),
   };
 }
+
+/**
+ * What the streamer should do when the player's chunk changes: unload chunks no longer wanted at
+ * once, and queue missing ones nearest-first so they can be built one per frame (no hitches).
+ */
+export function planChunkWork(
+  loaded: ReadonlySet<ChunkKey>,
+  wanted: ReadonlySet<ChunkKey>,
+  centreCx: number,
+  centreCy: number,
+): { toUnload: ChunkKey[]; queue: ChunkKey[] } {
+  const { toLoad, toUnload } = diffChunks(loaded, wanted);
+  const dist = (k: ChunkKey) => {
+    const { cx, cy } = parseChunkKey(k);
+    return Math.max(Math.abs(cx - centreCx), Math.abs(cy - centreCy)) * 1000 + Math.hypot(cx - centreCx, cy - centreCy);
+  };
+  return { toUnload, queue: toLoad.sort((a, b) => dist(a) - dist(b)) };
+}
+

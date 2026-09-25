@@ -1,8 +1,8 @@
 /** Metres per grid cell. */
 export const CELL_SIZE = 2;
 export const WALL_HEIGHT = 2.7;
-/** Pillars are thinner than a cell, both visually and for collision. */
-export const PILLAR_SIZE = 0.8;
+/** Square 1 m office columns (wallpapered, with baseboards). */
+export const PILLAR_SIZE = 1.0;
 
 export const Cell = { Floor: 0, Wall: 1, Pillar: 2 } as const;
 export type Cell = (typeof Cell)[keyof typeof Cell];

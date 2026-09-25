@@ -1,4 +1,5 @@
-import { Cell, CELL_SIZE, type Grid, getCell, PILLAR_SIZE, worldToCell } from '../world/grid';
+import { type Grid, worldToCell } from '../world/grid';
+import { type Rect, solidRects } from '../world/solids';
 
 export interface Vec2 {
   x: number;
@@ -8,32 +9,14 @@ export interface Vec2 {
 export const PLAYER_RADIUS = 0.3;
 const EPS = 1e-4;
 
-interface Rect {
-  minX: number;
-  maxX: number;
-  minZ: number;
-  maxZ: number;
-}
-
-function solidRect(grid: Grid, cx: number, cy: number): Rect | null {
-  const c = getCell(grid, cx, cy);
-  const x0 = cx * CELL_SIZE;
-  const z0 = cy * CELL_SIZE;
-  if (c === Cell.Wall) return { minX: x0, maxX: x0 + CELL_SIZE, minZ: z0, maxZ: z0 + CELL_SIZE };
-  if (c === Cell.Pillar) {
-    const inset = (CELL_SIZE - PILLAR_SIZE) / 2;
-    return { minX: x0 + inset, maxX: x0 + inset + PILLAR_SIZE, minZ: z0 + inset, maxZ: z0 + inset + PILLAR_SIZE };
-  }
-  return null;
-}
-
 /** Solid rects overlapping the player's square footprint (circle approximated by its AABB). */
 function overlapping(grid: Grid, x: number, z: number, r: number): Rect[] {
   const hits: Rect[] = [];
   for (let cy = worldToCell(z - r); cy <= worldToCell(z + r); cy++) {
     for (let cx = worldToCell(x - r); cx <= worldToCell(x + r); cx++) {
-      const rect = solidRect(grid, cx, cy);
-      if (rect && x + r > rect.minX && x - r < rect.maxX && z + r > rect.minZ && z - r < rect.maxZ) hits.push(rect);
+      for (const rect of solidRects(grid, cx, cy)) {
+        if (x + r > rect.minX && x - r < rect.maxX && z + r > rect.minZ && z - r < rect.maxZ) hits.push(rect);
+      }
     }
   }
   return hits;

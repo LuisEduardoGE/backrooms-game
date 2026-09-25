@@ -20,7 +20,7 @@ The player wakes in **Level 0** of the Backrooms — endless mono-yellow rooms, 
 
 - **Platform:** desktop browsers only (keyboard + mouse, Pointer Lock). Touch/mobile devices get a "play on desktop" screen with a trailer GIF.
 - **Stack:** TypeScript, Vite, Three.js, Three.js `EffectComposer` add-ons (RenderPass → OutputPass → one custom VHS ShaderPass), Web Audio API, Vitest.
-- **Style:** realistic VHS — soft fluorescent lighting, fog, VHS post-processing on top. Milestone 1 uses procedurally generated canvas textures (wallpaper, carpet, ceiling tiles); CC0 PBR textures (ambientCG / Poly Haven) may replace them in the polish milestone. All asset sources + licenses recorded in `public/CREDITS.md`.
+- **Style:** realistic VHS — soft fluorescent lighting, fog, VHS post-processing on top. Surfaces use photo-scanned CC0 PBR maps from ambientCG (carpet, ceiling tiles, wallpaper paper) with the Level 0 chevron print and mustard tint composited over them at load time (visual overhaul, 2026-09-25). All asset sources + licenses recorded in `public/CREDITS.md`.
 - **Hosting:** static site (Vercel or GitHub Pages). Validate locally first.
 
 ## 4. Architecture
@@ -34,7 +34,7 @@ src/
     chunks.ts          chunk streaming of meshes around the player
     meshes.ts          instanced walls / carpet / ceiling / light panels
   player/              controller, collision, noise emitter, camcorder, battery, sanity
-  lighting/            fluorescent flicker, blackouts, light pool near player
+  lighting/            baked light + contact shadows, panel flicker, blackouts
   threat/              director (escalation), presence, smiler, howler, grid pathfinding (A*)
   audio/               ambience, footsteps, positional entity audio
   fx/                  VHS post-processing chain
@@ -57,7 +57,7 @@ src/
   3. Flag ~15% of floor area as dark zones (contiguous regions).
   4. Place start; place exit at straight-line distance ≥140 cells (70% of grid width) from start, and reachable by path. If unreachable, re-roll with a derived seed.
   5. Place clues: wall arrows along the true shortest path (every ~15–25 cells), a few decoy arrows, 5–8 notes, batteries and Almond Water (weighted toward dark-zone edges).
-- **Rendering:** 16×16-cell chunks, loaded within radius 3 chunks, unloaded beyond; instanced meshes per chunk. Emissive ceiling panels everywhere; only 4–6 real point/rect lights pooled around the player. Exponential fog hides the load boundary.
+- **Rendering:** 16×16-cell chunks, loaded within radius 3 chunks, unloaded beyond; merged meshes per chunk (walls 35 cm with baseboards, 1 m columns, world-space UVs). Lighting is baked: per-cell light from the panel grid (occluded by walls) plus ray-fan contact shadows, stored in vertex colours — no real lights except a hemisphere fill, a straight-down key light for the normal maps and the night-vision IR light. Recessed 2×4 troffers (instanced, HDR) flicker/black out per instance; blackouts also dip the exposure. Post: GTAO + gentle bloom (half-res) → AgX → subtle VHS pass with a camcorder grade. Exponential fog hides the load boundary.
 - **Collision:** player is a circle vs. grid walls/pillars (axis-separated resolution). No physics engine.
 
 ## 6. Player systems

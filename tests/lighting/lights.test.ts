@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   flicker, FLICKER_RATE, isFaultyLight, isLightCell, lightFalloff, nearestLitLights, nearestLitLightsAt, panelGlow,
+  panelLevel, sceneExposure,
 } from '../../src/lighting/lights';
 import { Cell, createGrid, setCell } from '../../src/world/grid';
 
@@ -119,5 +120,33 @@ describe('panelGlow', () => {
     expect(panelGlow(false, true)).toBeLessThan(0.5);
     expect(panelGlow(true, false)).toBeLessThan(panelGlow(false, true));
     expect(panelGlow(true, true)).toBe(panelGlow(true, false));
+  });
+});
+
+describe('panelLevel', () => {
+  it('keeps dead (dark-zone) panels dead whatever happens', () => {
+    expect(panelLevel(0.06, 3, 7, 1, false, false)).toBe(0.06);
+    expect(panelLevel(0.06, 3, 7, 1, true, true)).toBe(0.06);
+  });
+
+  it('flickers a lit panel, and dims or kills it with the Howler warning or a blackout', () => {
+    const healthy = Array.from({ length: 40 }, (_, i) => i).find((id) => !isFaultyLight(id, 1))!;
+    expect(panelLevel(1, 2, healthy, 1, false, false)).toBeCloseTo(flicker(2, healthy, 1), 9);
+    expect(panelLevel(1, 2, healthy, 1, false, true)).toBeCloseTo(flicker(2, healthy, 1) * panelGlow(false, true), 9);
+    expect(panelLevel(1, 2, healthy, 1, true, false)).toBe(panelGlow(true, false));
+  });
+});
+
+describe('sceneExposure', () => {
+  it('is 1 normally, darker during the Howler warning, darkest in a blackout', () => {
+    expect(sceneExposure(false, false, 1)).toBe(1);
+    expect(sceneExposure(false, true, 1)).toBeLessThan(0.7);
+    expect(sceneExposure(true, false, 1)).toBeLessThan(sceneExposure(false, true, 1));
+  });
+
+  it('dips a little when the panel overhead flickers, never to darkness', () => {
+    const dip = sceneExposure(false, false, 0.15);
+    expect(dip).toBeLessThan(1);
+    expect(dip).toBeGreaterThan(0.75);
   });
 });

@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
-  applyLook, createPlayer, EYE_HEIGHT, MAX_PITCH, type MoveInput, NO_INPUT, SPEED, updatePlayer,
+  applyLook, createPlayer, EYE_HEIGHT, headBob, MAX_PITCH, type MoveInput, NO_INPUT, SPEED, updatePlayer,
 } from '../../src/player/controller';
 import { Cell, createGrid, setCell } from '../../src/world/grid';
+import { PLAYER_RADIUS } from '../../src/player/collision';
+import { WALL_THICKNESS } from '../../src/world/solids';
 
 const open = (() => {
   const g = createGrid(20, 20);
@@ -18,35 +20,40 @@ function run(p: ReturnType<typeof createPlayer>, i: MoveInput, steps: number, dt
 }
 
 describe('updatePlayer', () => {
+  /** Direction and steady-state speed after 1 s of input (momentum ramps up in the first ~0.2 s). */
+  const speed = (p: ReturnType<typeof createPlayer>) => Math.hypot(p.vel.x, p.vel.z);
+
   it('moves toward -z when walking forward at yaw 0', () => {
-    const p = run(createPlayer({ x: 20, z: 20 }), input({ forward: 1 }), 10);
-    expect(p.pos.z).toBeCloseTo(20 - SPEED.walk, 5);
+    const p = run(createPlayer({ x: 20, z: 20 }), input({ forward: 1 }), 60, 1 / 60);
+    expect(p.pos.z).toBeLessThan(20 - SPEED.walk * 0.8);
     expect(p.pos.x).toBeCloseTo(20, 5);
+    expect(speed(p)).toBeCloseTo(SPEED.walk, 5);
   });
 
   it('moves toward -x when walking forward at yaw π/2', () => {
-    const p = run(createPlayer({ x: 20, z: 20 }, Math.PI / 2), input({ forward: 1 }), 10);
-    expect(p.pos.x).toBeCloseTo(20 - SPEED.walk, 5);
+    const p = run(createPlayer({ x: 20, z: 20 }, Math.PI / 2), input({ forward: 1 }), 60, 1 / 60);
+    expect(p.pos.x).toBeLessThan(20 - SPEED.walk * 0.8);
+    expect(p.pos.z).toBeCloseTo(20, 5);
   });
 
   it('strafes right toward +x at yaw 0', () => {
-    const p = run(createPlayer({ x: 20, z: 20 }), input({ right: 1 }), 10);
-    expect(p.pos.x).toBeCloseTo(20 + SPEED.walk, 5);
+    const p = run(createPlayer({ x: 20, z: 20 }), input({ right: 1 }), 60, 1 / 60);
+    expect(p.pos.x).toBeGreaterThan(20 + SPEED.walk * 0.8);
   });
 
   it('does not move faster diagonally', () => {
-    const p = run(createPlayer({ x: 20, z: 20 }), input({ forward: 1, right: 1 }), 10);
-    expect(Math.hypot(p.pos.x - 20, p.pos.z - 20)).toBeCloseTo(SPEED.walk, 5);
+    const p = run(createPlayer({ x: 20, z: 20 }), input({ forward: 1, right: 1 }), 60, 1 / 60);
+    expect(speed(p)).toBeCloseTo(SPEED.walk, 5);
   });
 
   it('sprints faster, and crouch overrides sprint', () => {
-    const sprinter = run(createPlayer({ x: 20, z: 20 }), input({ forward: 1, sprint: true }), 4);
+    const sprinter = run(createPlayer({ x: 20, z: 20 }), input({ forward: 1, sprint: true }), 60, 1 / 60);
     expect(sprinter.gait).toBe('sprint');
-    expect(20 - sprinter.pos.z).toBeCloseTo(SPEED.sprint * 0.4, 5);
+    expect(speed(sprinter)).toBeCloseTo(SPEED.sprint, 5);
 
-    const croucher = run(createPlayer({ x: 20, z: 20 }), input({ forward: 1, sprint: true, crouch: true }), 4);
+    const croucher = run(createPlayer({ x: 20, z: 20 }), input({ forward: 1, sprint: true, crouch: true }), 60, 1 / 60);
     expect(croucher.gait).toBe('crouch');
-    expect(20 - croucher.pos.z).toBeCloseTo(SPEED.crouch * 0.4, 5);
+    expect(speed(croucher)).toBeCloseTo(SPEED.crouch, 5);
   });
 
   it('is not sprinting while standing still', () => {
@@ -72,7 +79,9 @@ describe('updatePlayer', () => {
 
   it('is stopped by walls', () => {
     const p = run(createPlayer({ x: 20, z: 20 }), input({ right: 1, sprint: true }), 100);
-    expect(p.pos.x).toBeCloseTo(38 - 0.3, 3);
+    // Border wall cell 19 spans 38..40: its slab's face is at 39 − WALL_THICKNESS / 2.
+    expect(p.pos.x).toBeCloseTo(39 - WALL_THICKNESS / 2 - PLAYER_RADIUS, 3);
+    expect(p.vel.x).toBe(0);
   });
 
   it('remembers the previous position and eye height for render interpolation', () => {
@@ -93,5 +102,59 @@ describe('applyLook', () => {
     expect(p.yaw).toBeCloseTo(-0.25, 6);
     expect(p.pitch).toBe(MAX_PITCH);
     expect(p.pos).toEqual({ x: 20, z: 20 });
+  });
+});
+
+describe('movement feel', () => {
+  const speed = (p: ReturnType<typeof createPlayer>) => Math.hypot(p.vel.x, p.vel.z);
+
+  it('jogs rather than glides: sprint 3.6 m/s, walk 2.5 m/s', () => {
+    expect(SPEED.sprint).toBeCloseTo(3.6, 9);
+    expect(SPEED.walk).toBeCloseTo(2.5, 9);
+  });
+
+  it('builds up speed over about a quarter second instead of instantly', () => {
+    const p = createPlayer({ x: 20, z: 20 });
+    run(p, input({ forward: 1, sprint: true }), 3, 1 / 60); // 0.05 s
+    expect(speed(p)).toBeGreaterThan(0);
+    expect(speed(p)).toBeLessThan(SPEED.sprint * 0.5);
+    run(p, input({ forward: 1, sprint: true }), 15, 1 / 60); // 0.3 s total
+    expect(speed(p)).toBeCloseTo(SPEED.sprint, 5);
+  });
+
+  it('comes to a stop quickly but not instantly when the keys are released', () => {
+    const p = run(createPlayer({ x: 20, z: 20 }), input({ forward: 1, sprint: true }), 60, 1 / 60);
+    run(p, NO_INPUT, 3, 1 / 60); // 0.05 s
+    expect(speed(p)).toBeGreaterThan(0);
+    run(p, NO_INPUT, 9, 1 / 60); // 0.2 s total
+    expect(speed(p)).toBe(0);
+    expect(p.moving).toBe(false);
+  });
+
+  it('loses momentum into a wall instead of pushing on it', () => {
+    const p = run(createPlayer({ x: 20, z: 20 }), input({ right: 1, sprint: true }), 400, 1 / 60);
+    expect(p.vel.x).toBe(0);
+  });
+});
+
+describe('headBob', () => {
+  it('is still when standing, and bobs harder sprinting than walking', () => {
+    const still = run(createPlayer({ x: 20, z: 20 }), NO_INPUT, 60, 1 / 60);
+    expect(headBob(still)).toEqual({ y: 0, roll: 0 });
+
+    const peak = (i: MoveInput) => {
+      const p = createPlayer({ x: 20, z: 20 });
+      let max = 0;
+      for (let k = 0; k < 120; k++) {
+        updatePlayer(p, i, 1 / 60, open);
+        max = Math.max(max, Math.abs(headBob(p).y));
+      }
+      return max;
+    };
+    const walk = peak(input({ forward: 1 }));
+    const sprint = peak(input({ forward: 1, sprint: true }));
+    expect(walk).toBeGreaterThan(0.005);
+    expect(sprint).toBeGreaterThan(walk);
+    expect(sprint).toBeLessThan(0.08);
   });
 });

@@ -1,6 +1,7 @@
 import type { Rng } from '../core/rng';
 import { Cell, type Dir, DIR_STEP, DIRS, type Grid, getCell, inBounds, type Point } from './grid';
 import { bfsDistances } from './pathing';
+import { hasFullFace } from './solids';
 
 export interface Arrow {
   /** Floor cell the arrow is painted in. */
@@ -19,7 +20,8 @@ export const DECOY_COUNT = 4;
 
 const PERPENDICULAR: Record<Dir, readonly [Dir, Dir]> = { N: ['E', 'W'], S: ['E', 'W'], E: ['N', 'S'], W: ['N', 'S'] };
 
-const isWallSide = (grid: Grid, p: Point, d: Dir) => getCell(grid, p.x + DIR_STEP[d].x, p.y + DIR_STEP[d].y) === Cell.Wall;
+/** Paint only on flat, full-width faces (thin walls seen end-on have no face). */
+const isWallSide = (grid: Grid, p: Point, d: Dir) => hasFullFace(grid, p.x, p.y, d);
 
 /** Shortest walkable path from → to (inclusive), following BFS distances from `to`. */
 export function shortestPath(grid: Grid, from: Point, to: Point): Point[] {

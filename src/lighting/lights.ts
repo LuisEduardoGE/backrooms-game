@@ -71,3 +71,29 @@ export function panelGlow(blackout: boolean, dim: boolean): number {
   if (blackout) return PANEL_BLACKOUT;
   return dim ? PANEL_DIM : 1;
 }
+
+/**
+ * Brightness of one ceiling panel this frame (its per-instance colour). `base` < 1 marks a dead
+ * dark-zone panel; `out` = inside a Presence blackout; `dim` = the Howler's warning.
+ */
+export function panelLevel(base: number, timeSec: number, lightId: number, seed: number, out: boolean, dim: boolean): number {
+  if (base < 1) return base;
+  if (out) return PANEL_BLACKOUT;
+  return flicker(timeSec, lightId, seed) * (dim ? PANEL_DIM : 1);
+}
+
+/** Exposure during a blackout / the Howler's warning (the baked light can't change, so the camera's does). */
+const EXPOSURE_BLACKOUT = 0.22;
+const EXPOSURE_DIM = 0.5;
+/** How much the room darkens when the panel nearest overhead drops out completely. */
+const FLICKER_DIP = 0.2;
+
+/**
+ * Camera exposure multiplier. `nearest` is the flicker level (0..1, weighted by closeness) of the
+ * panel nearest the player: a faulty tube overhead makes the whole view breathe with it.
+ */
+export function sceneExposure(blackout: boolean, dim: boolean, nearest: number): number {
+  if (blackout) return EXPOSURE_BLACKOUT;
+  const base = dim ? EXPOSURE_DIM : 1;
+  return base * (1 - FLICKER_DIP * (1 - Math.min(1, Math.max(0, nearest))));
+}
