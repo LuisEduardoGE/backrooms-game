@@ -185,6 +185,68 @@ function addPlane(b: Builder, x0: number, z0: number, w: number, h: number, y: n
   b.grid(first, cols, rows, up);
 }
 
+/** Suspended-ceiling T-bar: width and how far it hangs below the tiles (metres). */
+const TBAR_W = 0.024;
+const TBAR_D = 0.014;
+
+/** Removes [a, b] from each interval. */
+function cut(spans: [number, number][], a: number, b: number): [number, number][] {
+  return spans.flatMap(([s, e]): [number, number][] => {
+    if (b <= s || a >= e) return [[s, e]];
+    return [...(a > s ? [[s, a] as [number, number]] : []), ...(b < e ? [[b, e] as [number, number]] : [])];
+  });
+}
+
+/**
+ * The drop ceiling's metal grid as real geometry: a bar under every tile edge (every CEILING_TILE),
+ * interrupted where a troffer sits. Lines on the chunk's low edges belong to this chunk, the ones
+ * on its high edges to the next, so no bar is built twice.
+ */
+function addTBars(b: Builder, shade: (x: number, z: number) => number, wx0: number, wz0: number, w: number, h: number, panels: { wx: number; wz: number }[]): void {
+  const T = CEILING_TILE;
+  const y = WALL_HEIGHT - TBAR_D;
+  const bar = (along: 'x' | 'z', c: number, s: number, e: number) => {
+    // 2 m shading segments: the bars' light comes from whole-metre samples anyway.
+    const n = Math.max(1, Math.ceil((e - s) / 2));
+    const hw = TBAR_W / 2;
+    const P = (t: number, off: number, yy: number): [number, number, number] =>
+      along === 'x' ? [t, yy, c + off] : [c + off, yy, t];
+    // Bottom face (normal down), then the two sides.
+    const faces: { a: number; bOff: number; y0: number; y1: number; nrm: [number, number, number] }[] = [
+      { a: -hw, bOff: hw, y0: y, y1: y, nrm: [0, -1, 0] },
+      { a: -hw, bOff: -hw, y0: y, y1: WALL_HEIGHT, nrm: along === 'x' ? [0, 0, -1] : [-1, 0, 0] },
+      { a: hw, bOff: hw, y0: y, y1: WALL_HEIGHT, nrm: along === 'x' ? [0, 0, 1] : [1, 0, 0] },
+    ];
+    for (const f of faces) {
+      const first = b.pos.length / 3;
+      for (const row of [0, 1]) {
+        for (let i = 0; i <= n; i++) {
+          const t = s + ((e - s) * i) / n;
+          const off = row === 0 ? f.a : f.bOff;
+          const yy = row === 0 ? f.y0 : f.y1;
+          const [px, py, pz] = P(t, off, yy);
+          b.vert(px, py, pz, f.nrm[0], f.nrm[1], f.nrm[2], t, off, shade(px, pz));
+        }
+      }
+      // The bar material is double-sided, so winding doesn't matter here.
+      b.grid(first, n + 1, 2);
+    }
+  };
+  const lines = (lo: number, len: number) => {
+    const out: number[] = [];
+    for (let k = Math.ceil(lo / T - 1e-6); k * T < lo + len - 1e-6; k++) out.push(k * T);
+    return out;
+  };
+  // Bars running along z (constant x): panels sit between them, never across.
+  for (const x of lines(wx0, w)) bar('z', x, wz0, wz0 + h);
+  // Bars running along x (constant z): a troffer interrupts the one crossing its middle.
+  for (const z of lines(wz0, h)) {
+    let spans: [number, number][] = [[wx0, wx0 + w]];
+    for (const p of panels) if (Math.abs(p.wz - z) < T * 0.5) spans = cut(spans, p.wx - T / 2, p.wx + T / 2);
+    for (const [s, e] of spans) if (e - s > 1e-3) bar('x', z, s, e);
+  }
+}
+
 /** Per-chunk handle on its troffers, so flicker and blackouts can dim individual panels. */
 export interface ChunkPanels {
   mesh: THREE.InstancedMesh;
@@ -232,10 +294,13 @@ export function buildChunk(grid: Grid, cx: number, cy: number, mats: WorldMateri
 
   const cells: ChunkPanels['cells'] = [];
   for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) if (isLightCell(grid, x, y)) cells.push({ x, y, wx: cellToWorld(x), wz: trofferZ(y) });
+  const tbars = new Builder();
+  // Bars take the ceiling's light at the nearest whole metre (already sampled; light varies slowly).
+  addTBars(tbars, (x, z) => sample(Math.round(x), Math.round(z))[0] * 0.95, wx0, wz0, w, h, cells);
 
   const group = new THREE.Group();
   group.name = `chunk ${cx},${cy}`;
-  for (const m of [walls.mesh(mats.wall), stained.mesh(mats.wallStained), boards.mesh(mats.baseboard), floor.mesh(mats.floor), ceiling.mesh(mats.ceiling)]) {
+  for (const m of [walls.mesh(mats.wall), stained.mesh(mats.wallStained), boards.mesh(mats.baseboard), floor.mesh(mats.floor), ceiling.mesh(mats.ceiling), tbars.mesh(mats.tbar)]) {
     if (m) group.add(m);
   }
   if (cells.length > 0) {

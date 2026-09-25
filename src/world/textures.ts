@@ -5,11 +5,11 @@ import carpetNormal from '../assets/textures/Carpet016/NormalGL.jpg';
 import carpetRough from '../assets/textures/Carpet016/Roughness.jpg';
 import ceilingColor from '../assets/textures/OfficeCeiling001/Color.jpg';
 import ceilingNormal from '../assets/textures/OfficeCeiling001/NormalGL.jpg';
-import ceilingRough from '../assets/textures/OfficeCeiling001/Roughness.jpg';
 import paperColor from '../assets/textures/Wallpaper001C/Color.jpg';
-import paperNormal from '../assets/textures/Wallpaper001C/NormalGL.jpg';
 import paperRough from '../assets/textures/Wallpaper001C/Roughness.jpg';
 import stainedColor from '../assets/textures/Wallpaper002B/Color.jpg';
+import { withPanelLights } from '../lighting/panelLights';
+import { heightToNormal } from './normalMap';
 
 /**
  * World-space sizes (metres covered by one texture repeat). Every surface's UVs are in metres,
@@ -27,6 +27,8 @@ export const TEXTURE_METRES = {
 export const CEILING_TILE = TEXTURE_METRES.ceiling / 6;
 
 const COLOR_SIZE = 2048;
+/** Per-panel light for the shader-lit surfaces (see withPanelLights). */
+const PANEL_INTENSITY = 6;
 
 function finish<T extends THREE.Texture>(tex: T, metres: number, srgb: boolean): T {
   tex.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
@@ -107,6 +109,56 @@ function wallpaper(paper: HTMLImageElement, wash: number): HTMLCanvasElement {
   return c;
 }
 
+const EMBOSS_SIZE = 1024;
+
+/**
+ * Embossed vinyl: the pinstripes and chevrons are raised, the plain band has a soft flocked
+ * texture, and the paper's own fibre adds fine grain — as a normal map, so the pattern stands out
+ * in relief when the ceiling panels light it from above.
+ */
+function wallpaperNormal(paper: HTMLImageElement): THREE.DataTexture {
+  const S = EMBOSS_SIZE;
+  const [, ctx] = canvas(S);
+  // Paper grain first, faint.
+  ctx.drawImage(paper, 0, 0, S, S);
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+  ctx.fillRect(0, 0, S, S);
+  const stripe = S / 3;
+  ctx.filter = 'blur(1.5px)';
+  for (let i = 0; i < 3; i++) {
+    const x = i * stripe;
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.25)'; // flocked plain band, slightly proud
+    ctx.fillRect(x, 0, stripe * 0.42, S);
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(x + stripe * 0.45, 0, 3, S);
+    ctx.fillRect(x + stripe * 0.97, 0, 3, S);
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 5;
+    const bx = x + stripe * 0.5;
+    const bw = stripe * 0.44;
+    const step = S / 15;
+    ctx.beginPath();
+    for (let y = -step; y < S + step; y += step) {
+      ctx.moveTo(bx, y);
+      ctx.lineTo(bx + bw / 2, y + step * 0.6);
+      ctx.lineTo(bx + bw, y);
+    }
+    ctx.stroke();
+  }
+  ctx.filter = 'none';
+  const img = ctx.getImageData(0, 0, S, S).data;
+  const height = new Float32Array(S * S);
+  for (let i = 0; i < height.length; i++) height[i] = img[i * 4 + 1] / 255;
+  const tex = new THREE.DataTexture(heightToNormal(height, S, 6), S, S, THREE.RGBAFormat);
+  // DataTexture rows run bottom-up; the height rows ran top-down.
+  tex.flipY = true;
+  tex.generateMipmaps = true;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  tex.needsUpdate = true;
+  return tex;
+}
+
 /** Carpet016 is a clean beige low-pile; Level 0's is a dingy mustard with worn mottling. */
 function carpet(photo: HTMLImageElement, rng: Rng): HTMLCanvasElement {
   const S = COLOR_SIZE;
@@ -164,6 +216,8 @@ export interface WorldMaterials {
   /** Same wallpaper printed over water-stained paper. */
   wallStained: THREE.MeshStandardMaterial;
   baseboard: THREE.MeshStandardMaterial;
+  /** Off-white painted steel of the ceiling grid. */
+  tbar: THREE.MeshStandardMaterial;
   floor: THREE.MeshStandardMaterial;
   ceiling: THREE.MeshStandardMaterial;
   /** Unlit and HDR (colour > 1, so it blooms); per-instance colour dims individual panels. */
@@ -178,48 +232,55 @@ const textures = new THREE.TextureLoader();
  * Baked light and contact shadows arrive as vertex colours on every surface.
  */
 export async function loadWorldMaterials(rng: Rng): Promise<WorldMaterials> {
-  const [paper, stained, carpetImg, ceilingImg, paperN, paperR, carpetN, carpetR, ceilN, ceilR] = await Promise.all([
+  const [paper, stained, carpetImg, ceilingImg, paperR, carpetN, carpetR, ceilN] = await Promise.all([
     images.loadAsync(paperColor),
     images.loadAsync(stainedColor),
     images.loadAsync(carpetColor),
     images.loadAsync(ceilingColor),
-    textures.loadAsync(paperNormal),
     textures.loadAsync(paperRough),
     textures.loadAsync(carpetNormal),
     textures.loadAsync(carpetRough),
     textures.loadAsync(ceilingNormal),
-    textures.loadAsync(ceilingRough),
   ]);
   const W = TEXTURE_METRES.wallpaper;
-  const paperNormalMap = finish(paperN, W, false);
+  const paperNormalMap = finish(wallpaperNormal(paper), W, false);
   const paperRoughMap = finish(paperR, W, false);
+  // Every surface is lit per pixel by the ceiling panels (see lighting/panelLights.ts).
+  const lit = <T extends THREE.MeshStandardMaterial>(m: T, drop?: number) => withPanelLights(m, { intensity: PANEL_INTENSITY, drop });
   const wallMat = (img: HTMLImageElement, wash: number) =>
-    new THREE.MeshStandardMaterial({
-      map: finish(new THREE.CanvasTexture(wallpaper(img, wash)), W, true),
-      normalMap: paperNormalMap,
-      normalScale: new THREE.Vector2(0.6, 0.6),
-      roughnessMap: paperRoughMap,
-      roughness: 1,
-      vertexColors: true,
-    });
+    lit(
+      new THREE.MeshStandardMaterial({
+        map: finish(new THREE.CanvasTexture(wallpaper(img, wash)), W, true),
+        normalMap: paperNormalMap,
+        normalScale: new THREE.Vector2(1, 1),
+        roughnessMap: paperRoughMap,
+        roughness: 1,
+        vertexColors: true,
+      }),
+    );
   return {
     wall: wallMat(paper, 0.55),
     wallStained: wallMat(stained, 0.35),
-    baseboard: new THREE.MeshStandardMaterial({ color: 0xd9d0b4, roughness: 0.55, vertexColors: true }),
-    floor: new THREE.MeshStandardMaterial({
+    baseboard: lit(new THREE.MeshStandardMaterial({ color: 0xd9d0b4, roughness: 0.45, vertexColors: true })),
+    tbar: lit(new THREE.MeshStandardMaterial({ color: new THREE.Color(1.35, 1.32, 1.22), roughness: 0.5, metalness: 0.1, vertexColors: true, side: THREE.DoubleSide }), 1.1),
+    floor: lit(new THREE.MeshStandardMaterial({
       map: finish(new THREE.CanvasTexture(carpet(carpetImg, rng)), TEXTURE_METRES.carpet, true),
       normalMap: finish(carpetN, TEXTURE_METRES.carpet, false),
+      normalScale: new THREE.Vector2(1.6, 1.6),
       roughnessMap: finish(carpetR, TEXTURE_METRES.carpet, false),
       roughness: 1,
       vertexColors: true,
-    }),
-    ceiling: new THREE.MeshStandardMaterial({
+    })),
+    ceiling: lit(new THREE.MeshStandardMaterial({
       map: finish(new THREE.CanvasTexture(ceiling(ceilingImg)), TEXTURE_METRES.ceiling, true),
       normalMap: finish(ceilN, TEXTURE_METRES.ceiling, false),
-      roughnessMap: finish(ceilR, TEXTURE_METRES.ceiling, false),
+      normalScale: new THREE.Vector2(0.9, 0.9),
+      // Matte mineral tile: no roughness map (its low values made glints near the panels).
       roughness: 1,
+      // > 1: the ceiling gets little fill light from above, so lift its albedo.
+      color: new THREE.Color(1.5, 1.5, 1.5),
       vertexColors: true,
-    }),
+    }), 1.1),
     troffer: new THREE.MeshBasicMaterial({
       map: finish(new THREE.CanvasTexture(troffer()), 1, true),
       color: new THREE.Color(3.2, 3.05, 2.7),

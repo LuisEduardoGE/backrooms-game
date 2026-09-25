@@ -28,7 +28,8 @@ Update the spec when a design decision changes.
   Three.js code only renders state.
 - **Everything is deterministic from the run seed** (seeded RNG sub-streams). Retry = same seed.
 - World is a finite 200×200 grid (1 cell = 2 m) streamed in 16×16-cell chunks; instanced meshes;
-  baked light + contact shadows in vertex colours (no point lights); HDR troffers flicker per instance;
+  baked light + contact shadows in vertex colours; surfaces lit per pixel by the analytic panel lattice
+  (no scene point lights); real T-bar ceiling grid; embossed wallpaper normals; HDR troffers flicker per instance;
   GTAO + bloom + AgX under a subtle VHS pass; fog hides the load edge. Textures: ambientCG CC0 scans.
 - Collision is circle-vs-grid, no physics engine. Entities use A* on the grid.
 - Performance budget: **60 fps on a mid-range laptop.**
