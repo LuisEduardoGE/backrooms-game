@@ -5,9 +5,9 @@ import { isLightCell } from './lights';
 /** Brightness of an unpowered area (a faint glow so it isn't pure black). */
 export const AMBIENT_DARK = 0.12;
 /** Panels this many cells away still contribute (falling off smoothly to zero). */
-const REACH = 4.5;
-/** The weakest summed panel contribution anywhere in a fully powered open area (panels every 2 cells). */
-const FULL = 2.6;
+const REACH = 3;
+/** Summed panel weight that counts as full light: set so a cell beside a wall (missing the panels beyond it) still reads ~0.9 — the photo lights walls as evenly as open floor. */
+const FULL = 3.9;
 /**
  * Baked fluorescent light at a cell, 0..1: even and bright wherever powered panels are overhead,
  * fading off toward dark zones and behind walls. Level 0's light is flat and everywhere — it does

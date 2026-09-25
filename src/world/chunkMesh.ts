@@ -4,13 +4,16 @@ import { contactShadow, type LightField, lightAt } from '../lighting/sample';
 import { CHUNK_CELLS } from './chunks';
 import { CELL_SIZE, cellToWorld, type Grid, isDark, WALL_HEIGHT } from './grid';
 import { CEILING_TILE, type WorldMaterials } from './textures';
-import { type WallQuad, wallQuads } from './wallFaces';
+import { type OutletSpot, outletSpots, type WallQuad, wallQuads } from './wallFaces';
 
 export type { LightField };
 
-/** Baseboard: height and how far it stands proud of the wallpaper (metres). */
-const BASEBOARD_H = 0.1;
-const BASEBOARD_D = 0.015;
+/** Bumper rail on some walls (the photo's thin brown rail; there is no white skirting). */
+const RAIL_Y0 = 0.22;
+const RAIL_Y1 = 0.25;
+const RAIL_D = 0.012;
+/** Outlet plate: width, height, depth (metres) and the height of its centre. */
+const OUTLET = { w: 0.07, h: 0.115, d: 0.006, y: 0.3 };
 /** Longest wall/floor/ceiling segment between shading vertices (metres). */
 const SEG = 1;
 /** Rows of shading vertices up a wall: dense near the floor and ceiling where the shadows are. */
@@ -18,8 +21,8 @@ const WALL_ROWS = [0, 0.12, 0.4, 1.2, 2.2, 2.55, WALL_HEIGHT];
 /** Brightness of a dark-zone panel (a dead tube, barely visible). */
 export const PANEL_OFF = 0.06;
 
-/** A troffer sits over lit cells: one ceiling tile wide, two long, snapped to the tile grid. */
-const trofferGeo = new THREE.PlaneGeometry(CEILING_TILE, CEILING_TILE * 2).rotateX(Math.PI / 2);
+/** A square 2×2 ft panel over every lit cell: exactly the ceiling tile at the cell's centre. */
+const trofferGeo = new THREE.PlaneGeometry(CEILING_TILE, CEILING_TILE).rotateX(Math.PI / 2);
 
 /** Soft, low-frequency damp patches on the carpet (deterministic value noise, 0..1 darkening). */
 function hash(ix: number, iz: number): number {
@@ -53,14 +56,15 @@ function ceilingGlow(grid: Grid, wx: number, wz: number): number {
     for (let x = cx - 1; x <= cx + 1; x++) {
       if (!isLightCell(grid, x, y) || isDark(grid, x, y)) continue;
       const d2 = (cellToWorld(x) - wx) ** 2 + (trofferZ(y) - wz) ** 2;
-      g += 0.45 * Math.exp(-d2 / 0.9);
+      // A tight halo: with a panel every 2 m, wide glows would light the whole ceiling evenly.
+      g += 0.35 * Math.exp(-d2 / 0.3);
     }
   }
   return 1 + g;
 }
 
 function trofferZ(y: number): number {
-  return y * CELL_SIZE + CEILING_TILE * 2;
+  return cellToWorld(y);
 }
 
 /** Accumulates positions / normals / uvs / colours / indices for one merged mesh. */
@@ -127,9 +131,30 @@ function wallShade([light, corner]: [number, number], y: number): number {
   return light * cornerAO * wallHeightShade(y);
 }
 
-/** Stained wallpaper on roughly one wall run in five (deterministic by position). */
-function isStained(q: WallQuad): boolean {
-  return hash(Math.round((q.x0 + q.x1) * 5), Math.round((q.z0 + q.z1) * 5) + 911) < 0.2;
+export type Paper = 'chevron' | 'dots' | 'stained';
+
+/**
+ * The wall line a face lies on (its plane and facing), so every face along one straight wall —
+ * across junctions and chunk borders — gets the same paper and rail.
+ */
+function lineKey(nx: number, nz: number, x: number, z: number): [number, number] {
+  return nz !== 0 ? [Math.round(z * 20), 3 + nz] : [Math.round(x * 20), 7 + nx];
+}
+
+/**
+ * Which paper a wall line wears: mostly the chevron-and-chain paper, about a third the dot paper
+ * (the photo mixes both), and some chevron runs water-stained. Shared with the noclip exit wall.
+ */
+export function paperFor(nx: number, nz: number, x: number, z: number): Paper {
+  const [a, b] = lineKey(nx, nz, x, z);
+  const r = hash(a, b + 911);
+  return r < 0.15 ? 'stained' : r < 0.45 ? 'dots' : 'chevron';
+}
+
+/** About two walls in five carry the low bumper rail. */
+function hasRail(q: WallQuad): boolean {
+  const [a, b] = lineKey(q.nx, q.nz, q.x0, q.z0);
+  return hash(a, b + 313) < 0.4;
 }
 
 function addWall(b: Builder, grid: Grid, light: LightField, q: WallQuad): void {
@@ -148,28 +173,33 @@ function addWall(b: Builder, grid: Grid, light: LightField, q: WallQuad): void {
   b.grid(first, cols, WALL_ROWS.length);
 }
 
-function addBaseboard(b: Builder, grid: Grid, light: LightField, q: WallQuad): void {
-  const ox = q.nx * BASEBOARD_D;
-  const oz = q.nz * BASEBOARD_D;
-  // Extend by the board depth at both ends so outside corners close up.
-  const ex = ((q.x1 - q.x0) / Math.hypot(q.x1 - q.x0, q.z1 - q.z0)) * BASEBOARD_D;
-  const ez = ((q.z1 - q.z0) / Math.hypot(q.x1 - q.x0, q.z1 - q.z0)) * BASEBOARD_D;
-  const shade = (t: number) => wallShade(wallColumn(grid, light, q, t), 0.05) * 1.05;
+/** A thin strip standing proud of the wall between heights y0 and y1: front, top and bottom faces. */
+function addStrip(b: Builder, grid: Grid, light: LightField, q: WallQuad, y0: number, y1: number, depth: number): void {
+  const ox = q.nx * depth;
+  const oz = q.nz * depth;
+  const len = Math.hypot(q.x1 - q.x0, q.z1 - q.z0);
+  // Extend by the depth at both ends so outside corners close up.
+  const ex = ((q.x1 - q.x0) / len) * depth;
+  const ez = ((q.z1 - q.z0) / len) * depth;
+  const shade = (t: number) => wallShade(wallColumn(grid, light, q, t), (y0 + y1) / 2);
   const s0 = shade(0);
   const s1 = shade(1);
   const [ax, az, bx, bz] = [q.x0 - ex + ox, q.z0 - ez + oz, q.x1 + ex + ox, q.z1 + ez + oz];
-  // Front face.
-  let f = b.vert(ax, 0, az, q.nx, 0, q.nz, 0, 0, s0);
-  b.vert(bx, 0, bz, q.nx, 0, q.nz, 1, 0, s1);
-  b.vert(ax, BASEBOARD_H, az, q.nx, 0, q.nz, 0, 1, s0);
-  b.vert(bx, BASEBOARD_H, bz, q.nx, 0, q.nz, 1, 1, s1);
+  let f = b.vert(ax, y0, az, q.nx, 0, q.nz, 0, 0, s0);
+  b.vert(bx, y0, bz, q.nx, 0, q.nz, 1, 0, s1);
+  b.vert(ax, y1, az, q.nx, 0, q.nz, 0, 1, s0);
+  b.vert(bx, y1, bz, q.nx, 0, q.nz, 1, 1, s1);
   b.grid(f, 2, 2);
-  // Top lip.
-  f = b.vert(ax - ox, BASEBOARD_H, az - oz, 0, 1, 0, 0, 0, s0);
-  b.vert(bx - ox, BASEBOARD_H, bz - oz, 0, 1, 0, 1, 0, s1);
-  b.vert(ax, BASEBOARD_H, az, 0, 1, 0, 0, 1, s0);
-  b.vert(bx, BASEBOARD_H, bz, 0, 1, 0, 1, 1, s1);
+  f = b.vert(ax - ox, y1, az - oz, 0, 1, 0, 0, 0, s0);
+  b.vert(bx - ox, y1, bz - oz, 0, 1, 0, 1, 0, s1);
+  b.vert(ax, y1, az, 0, 1, 0, 0, 1, s0);
+  b.vert(bx, y1, bz, 0, 1, 0, 1, 1, s1);
   b.grid(f, 2, 2, true);
+  f = b.vert(ax - ox, y0, az - oz, 0, -1, 0, 0, 0, s0 * 0.7);
+  b.vert(bx - ox, y0, bz - oz, 0, -1, 0, 1, 0, s1 * 0.7);
+  b.vert(ax, y0, az, 0, -1, 0, 0, 1, s0 * 0.7);
+  b.vert(bx, y0, bz, 0, -1, 0, 1, 1, s1 * 0.7);
+  b.grid(f, 2, 2);
 }
 
 /** A horizontal plane over the whole chunk at 1 m vertex spacing, UVs in world metres. */
@@ -189,8 +219,8 @@ function addPlane(b: Builder, x0: number, z0: number, w: number, h: number, y: n
 }
 
 /** Suspended-ceiling T-bar: width and how far it hangs below the tiles (metres). */
-const TBAR_W = 0.024;
-const TBAR_D = 0.014;
+const TBAR_W = 0.016;
+const TBAR_D = 0.008;
 
 /** Removes [a, b] from each interval. */
 function cut(spans: [number, number][], a: number, b: number): [number, number][] {
@@ -250,6 +280,28 @@ function addTBars(b: Builder, shade: (x: number, z: number) => number, wx0: numb
   }
 }
 
+const outletGeo = new THREE.BoxGeometry(OUTLET.w, OUTLET.h, OUTLET.d);
+
+/** Outlet plates on the wall faces, instanced; instance colour carries the baked light there. */
+function outlets(spots: OutletSpot[], grid: Grid, light: LightField, mat: THREE.Material): THREE.InstancedMesh | null {
+  if (spots.length === 0) return null;
+  const mesh = new THREE.InstancedMesh(outletGeo, mat, spots.length);
+  const m = new THREE.Matrix4();
+  const q = new THREE.Quaternion();
+  const up = new THREE.Vector3(0, 1, 0);
+  const color = new THREE.Color();
+  spots.forEach((s, i) => {
+    q.setFromAxisAngle(up, Math.atan2(s.nx, s.nz)); // box +z face → the wall's outward normal
+    m.compose(new THREE.Vector3(s.x + s.nx * (OUTLET.d / 2), OUTLET.y, s.z + s.nz * (OUTLET.d / 2)), q, new THREE.Vector3(1, 1, 1));
+    mesh.setMatrixAt(i, m);
+    mesh.setColorAt(i, color.setScalar(lightAt(grid, light, s.x + s.nx * 0.06, s.z + s.nz * 0.06) * wallHeightShade(OUTLET.y)));
+  });
+  mesh.instanceMatrix.needsUpdate = true;
+  if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+  mesh.computeBoundingSphere();
+  return mesh;
+}
+
 /** Per-chunk handle on its troffers, so flicker and blackouts can dim individual panels. */
 export interface ChunkPanels {
   mesh: THREE.InstancedMesh;
@@ -268,12 +320,12 @@ export function buildChunk(grid: Grid, cx: number, cy: number, mats: WorldMateri
   const w = (x1 - x0) * CELL_SIZE;
   const h = (y1 - y0) * CELL_SIZE;
 
-  const walls = new Builder();
-  const stained = new Builder();
-  const boards = new Builder();
-  for (const q of wallQuads(grid, cx, cy, CHUNK_CELLS)) {
-    addWall(isStained(q) ? stained : walls, grid, light, q);
-    addBaseboard(boards, grid, light, q);
+  const papers: Record<Paper, Builder> = { chevron: new Builder(), dots: new Builder(), stained: new Builder() };
+  const rails = new Builder();
+  const quads = wallQuads(grid, cx, cy, CHUNK_CELLS);
+  for (const q of quads) {
+    addWall(papers[paperFor(q.nx, q.nz, q.x0, q.z0)], grid, light, q);
+    if (hasRail(q)) addStrip(rails, grid, light, q, RAIL_Y0, RAIL_Y1, RAIL_D);
   }
 
   // Floor and ceiling share one vertex grid: sample light and contact shadow once per point.
@@ -303,7 +355,17 @@ export function buildChunk(grid: Grid, cx: number, cy: number, mats: WorldMateri
 
   const group = new THREE.Group();
   group.name = `chunk ${cx},${cy}`;
-  for (const m of [walls.mesh(mats.wall), stained.mesh(mats.wallStained), boards.mesh(mats.baseboard), floor.mesh(mats.floor), ceiling.mesh(mats.ceiling), tbars.mesh(mats.tbar)]) {
+  const meshes = [
+    papers.chevron.mesh(mats.wall),
+    papers.dots.mesh(mats.wallDots),
+    papers.stained.mesh(mats.wallStained),
+    rails.mesh(mats.rail),
+    floor.mesh(mats.floor),
+    ceiling.mesh(mats.ceiling),
+    tbars.mesh(mats.tbar),
+    outlets(outletSpots(quads), grid, light, mats.outlet),
+  ];
+  for (const m of meshes) {
     if (m) group.add(m);
   }
   if (cells.length > 0) {

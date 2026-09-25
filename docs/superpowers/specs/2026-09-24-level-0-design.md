@@ -20,7 +20,7 @@ The player wakes in **Level 0** of the Backrooms — endless mono-yellow rooms, 
 
 - **Platform:** desktop browsers only (keyboard + mouse, Pointer Lock). Touch/mobile devices get a "play on desktop" screen with a trailer GIF.
 - **Stack:** TypeScript, Vite, Three.js, Three.js `EffectComposer` add-ons (RenderPass → OutputPass → one custom VHS ShaderPass), Web Audio API, Vitest.
-- **Style:** realistic VHS — soft fluorescent lighting, fog, VHS post-processing on top. Surfaces use photo-scanned CC0 PBR maps from ambientCG (carpet, ceiling tiles, wallpaper paper) with the Level 0 chevron print and mustard tint composited over them at load time (visual overhaul, 2026-09-25). All asset sources + licenses recorded in `public/CREDITS.md`.
+- **Style:** realistic VHS — soft fluorescent lighting, fog, VHS post-processing on top. Surfaces use photo-scanned CC0 PBR maps from ambientCG (carpet, ceiling tiles, wallpaper paper) with the original photo's wallpaper print (7.5 cm bands of upward double chevrons and dotted chain lines, plus a small-dot paper) composited over them at load time. Reference look (2026-09-25, user-chosen mix): wallpaper, colour and bare walls with a low brown rail and outlets from the original 2002 photo; dense 2×2 ft square panels over every cell and dark-olive unlit areas from Kane Pixels. All asset sources + licenses recorded in `public/CREDITS.md`.
 - **Hosting:** static site (Vercel or GitHub Pages). Validate locally first.
 
 ## 4. Architecture

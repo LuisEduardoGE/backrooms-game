@@ -29,8 +29,11 @@ Update the spec when a design decision changes.
 - **Everything is deterministic from the run seed** (seeded RNG sub-streams). Retry = same seed.
 - World is a finite 200×200 grid (1 cell = 2 m) streamed in 16×16-cell chunks; instanced meshes;
   baked light + contact shadows in vertex colours; surfaces lit per pixel by the analytic panel lattice
-  (no scene point lights); real T-bar ceiling grid; embossed wallpaper normals; HDR troffers flicker per instance;
+  (no scene point lights); real T-bar ceiling grid; HDR 2×2 ft panels over every cell flicker per instance;
   GTAO + bloom + AgX under a subtle VHS pass; fog hides the load edge. Textures: ambientCG CC0 scans.
+- **Look reference (user-chosen "mix", 2026-09-25):** wallpaper, colours and bare walls from the original
+  2002 photo (DSC00161: 7.5 cm chevron/chain bands + a dot paper, no white skirting, low brown rail,
+  outlets); dense square panels and dark-olive unlit areas from Kane Pixels. Check changes against them.
 - Collision is circle-vs-grid, no physics engine. Entities use A* on the grid.
 - Performance budget: **60 fps on a mid-range laptop.**
 

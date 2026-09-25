@@ -1,12 +1,14 @@
 import type * as THREE from 'three';
 import { CELL_SIZE, WALL_HEIGHT } from '../world/grid';
-import { CEILING_TILE } from '../world/textures';
 
-/** Panels hang over every even/even cell: a regular lattice (see isLightCell and chunkMesh trofferZ). */
-const PITCH = CELL_SIZE * 2;
+/** A panel hangs over every cell centre: a regular 2 m lattice (see isLightCell and chunkMesh). */
+const PITCH = CELL_SIZE;
 const ORIGIN_X = CELL_SIZE / 2;
-/** Contribution reaches zero here (metres). ≤ 6 m, so the 3×3 lattice window never pops a light in. */
-const RANGE = 6;
+/**
+ * Contribution reaches zero here (metres). The 5×5 window reaches at least 3 m from any point in
+ * every direction, so with RANGE 3 no light ever pops in or out.
+ */
+const RANGE = 3;
 
 export interface PanelLightOptions {
   /** Linear light intensity per panel at ~1 m. */
@@ -20,15 +22,14 @@ export interface PanelLightOptions {
 }
 
 /**
- * Makes a MeshStandardMaterial lit per pixel by the ceiling panels themselves — the 3×3 nearest
+ * Makes a MeshStandardMaterial lit per pixel by the ceiling panels themselves — the 5×5 nearest
  * lattice panels, computed analytically in the shader (no scene lights, no shadow maps). Light
  * arrives from above and to the side at real angles, so normal and roughness maps finally read:
  * wallpaper emboss, carpet pile and ceiling tile relief catch the light like the real thing.
  * Room-scale brightness (walls, dark zones) still comes from the baked vertex colours.
  */
 export function withPanelLights<T extends THREE.MeshStandardMaterial>(mat: T, o: PanelLightOptions): T {
-  // Read here, not at module load: textures.ts imports this module (circular).
-  const ORIGIN_Z = CEILING_TILE * 2;
+  const ORIGIN_Z = CELL_SIZE / 2;
   const PANEL_Y = WALL_HEIGHT - (o.drop ?? 0.05);
   mat.onBeforeCompile = (shader) => {
     shader.uniforms.uPanelIntensity = { value: o.intensity };
@@ -42,13 +43,14 @@ export function withPanelLights<T extends THREE.MeshStandardMaterial>(mat: T, o:
         /* glsl */ `
         {
           vec2 centre = floor((vPanelWorld.xz - vec2(${ORIGIN_X.toFixed(4)}, ${ORIGIN_Z.toFixed(4)})) / ${PITCH.toFixed(4)} + 0.5);
-          for (int j = -1; j <= 1; j++) {
-            for (int i = -1; i <= 1; i++) {
+          for (int j = -2; j <= 2; j++) {
+            for (int i = -2; i <= 2; i++) {
               vec2 cell = centre + vec2(float(i), float(j));
               vec3 lp = vec3(cell.x * ${PITCH.toFixed(4)} + ${ORIGIN_X.toFixed(4)}, ${PANEL_Y.toFixed(4)}, cell.y * ${PITCH.toFixed(4)} + ${ORIGIN_Z.toFixed(4)});
               vec3 lv = (viewMatrix * vec4(lp, 1.0)).xyz - geometryPosition;
               float d = length(lv);
               float w = saturate(1.0 - (d * d) / ${(RANGE * RANGE).toFixed(1)});
+              if (w <= 0.0) continue;
               IncidentLight panel;
               panel.direction = lv / d;
               // Windowed inverse-square: physically shaped near the panel, smoothly zero at RANGE.

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Cell, createGrid, type Grid, PILLAR_SIZE, setCell } from '../../src/world/grid';
 import { solidRects, WALL_THICKNESS } from '../../src/world/solids';
-import { type WallQuad, wallQuads } from '../../src/world/wallFaces';
+import { outletSpots, type WallQuad, wallQuads } from '../../src/world/wallFaces';
 
 /** 12×12 floor with no border, so only hand-placed solids exist. */
 function open(): Grid {
@@ -67,5 +67,37 @@ describe('wallQuads', () => {
     setCell(g, 9, 9, Cell.Pillar);
     expect(wallQuads(g, 0, 0, 6)).toHaveLength(4);
     expect(wallQuads(g, 1, 1, 6)).toHaveLength(4);
+  });
+});
+
+describe('outletSpots', () => {
+  function hall(): Grid {
+    const g = open();
+    for (let x = 0; x < 12; x++) setCell(g, x, 2, Cell.Wall);
+    for (let x = 0; x < 12; x++) setCell(g, x, 9, Cell.Wall);
+    return g;
+  }
+
+  it('puts outlets on long wall faces only, away from the ends, flush in front of the face', () => {
+    const quads = wallQuads(hall(), 0, 0, 12);
+    const spots = outletSpots(quads);
+    expect(spots.length).toBeGreaterThan(0);
+    for (const s of spots) {
+      const q = quads.find((q) => q === s.quad)!;
+      const len = Math.hypot(q.x1 - q.x0, q.z1 - q.z0);
+      expect(len).toBeGreaterThanOrEqual(1.2);
+      const t = ((s.x - q.x0) * (q.x1 - q.x0) + (s.z - q.z0) * (q.z1 - q.z0)) / (len * len);
+      expect(t).toBeGreaterThanOrEqual(0.15);
+      expect(t).toBeLessThanOrEqual(0.85);
+      expect([s.nx, s.nz]).toEqual([q.nx, q.nz]);
+    }
+  });
+
+  it('is sparse (about one per 6 m of wall) and deterministic', () => {
+    const quads = wallQuads(hall(), 0, 0, 12);
+    const total = quads.reduce((m, q) => m + Math.hypot(q.x1 - q.x0, q.z1 - q.z0), 0);
+    const spots = outletSpots(quads);
+    expect(spots.length).toBeLessThanOrEqual(Math.ceil(total / 4));
+    expect(outletSpots(quads)).toEqual(spots);
   });
 });

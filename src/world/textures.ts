@@ -16,8 +16,8 @@ import { heightToNormal } from './normalMap';
  * so these are the only knobs for pattern scale.
  */
 export const TEXTURE_METRES = {
-  /** One wallpaper sheet: 3 chevron stripes across, 1.2 m wide. */
-  wallpaper: 1.2,
+  /** One wallpaper sheet: 0.6 m, eight 7.5 cm bands (the original photo's scale). */
+  wallpaper: 0.6,
   carpet: 2.5,
   /** OfficeCeiling001 has 6×6 tiles per texture → 2/3 m tiles, exactly 3 per 2 m cell. */
   ceiling: 4,
@@ -28,7 +28,12 @@ export const CEILING_TILE = TEXTURE_METRES.ceiling / 6;
 
 const COLOR_SIZE = 2048;
 /** Per-panel light for the shader-lit surfaces (see withPanelLights). */
-const PANEL_INTENSITY = 6;
+const PANEL_INTENSITY = 11;
+/**
+ * The ceiling's bounce light (virtual sources below it). Kept low: in the references the walls,
+ * not the ceiling, are the brightest surfaces, and the ceiling between panels goes dim.
+ */
+const CEILING_PANEL_INTENSITY = 4;
 
 function finish<T extends THREE.Texture>(tex: T, metres: number, srgb: boolean): T {
   tex.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
@@ -64,11 +69,82 @@ function wrappedBlob(ctx: CanvasRenderingContext2D, x: number, y: number, r: num
   }
 }
 
+/** Pale yellow-green paper, sampled from the original 2002 photo and corrected for its lighting. */
+const PAPER_BASE = '#dccc6c';
+/** The second paper on some partitions (the photo's left wall) is a shade deeper. */
+const DOT_PAPER_BASE = '#d6c464';
+
 /**
- * Level 0 wallpaper: mustard stripes, alternating plain and a fine chevron (zig-zag) band, printed
- * over a photo-scanned paper so it keeps real fibre, streaks and (for the stained variant) water marks.
+ * The print of the original Backrooms wallpaper (DSC00161): vertical bands every 7.5 cm — a column
+ * of small, stacked double chevrons pointing up, staggered between columns, alternating with a
+ * thin dotted "chain" line. Drawn in `ink` so the same routine makes the colour print and the
+ * height mask. `unit` = pixels per sheet (the sheet is TEXTURE_METRES.wallpaper wide).
  */
-function wallpaper(paper: HTMLImageElement, wash: number): HTMLCanvasElement {
+function drawChevronPrint(ctx: CanvasRenderingContext2D, unit: number, ink: string, outline?: string): void {
+  const bands = 8; // 0.6 m sheet / 7.5 cm
+  const band = unit / bands;
+  const rows = 12; // chevron pairs per sheet height (5 cm apart); divides the sheet, so it tiles
+  const step = unit / rows;
+  const w = band * 0.42; // chevron width ≈ 3 cm
+  for (let b = 0; b < bands; b++) {
+    const cx = b * band + band * 0.5;
+    const offset = b % 2 === 0 ? 0 : step / 2; // staggered between columns
+    for (let r = -1; r <= rows; r++) {
+      const y = r * step + offset;
+      for (const dy of [0, step * 0.28]) {
+        ctx.beginPath();
+        ctx.moveTo(cx - w / 2, y + dy + w * 0.32);
+        ctx.lineTo(cx, y + dy);
+        ctx.lineTo(cx + w / 2, y + dy + w * 0.32);
+        if (outline) {
+          ctx.strokeStyle = outline;
+          ctx.lineWidth = unit * 0.012;
+          ctx.stroke();
+        }
+        ctx.strokeStyle = ink;
+        ctx.lineWidth = unit * 0.008;
+        ctx.stroke();
+      }
+    }
+    // The dotted chain line between chevron columns.
+    const lx = b * band;
+    const links = 48;
+    for (let k = 0; k < links; k++) {
+      const y = (k + 0.5) * (unit / links);
+      ctx.beginPath();
+      ctx.ellipse(lx, y, unit * 0.0045, unit * 0.0085, 0, 0, Math.PI * 2);
+      ctx.fillStyle = outline ?? ink;
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(lx, y, unit * 0.0028, unit * 0.0062, 0, 0, Math.PI * 2);
+      ctx.fillStyle = ink;
+      ctx.fill();
+    }
+  }
+}
+
+/** The dot paper: tiny dots on a diagonal grid about 2 cm apart. */
+function drawDotPrint(ctx: CanvasRenderingContext2D, unit: number, ink: string): void {
+  const n = 30; // 0.6 m / 30 = 2 cm; divides the sheet, so it tiles
+  const s = unit / n;
+  ctx.fillStyle = ink;
+  for (let j = 0; j < n; j++) {
+    for (let i = 0; i < n; i++) {
+      const x = (i + (j % 2) * 0.5) * s;
+      ctx.beginPath();
+      ctx.arc(x, (j + 0.5) * s, unit * 0.0042, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+}
+
+type Print = 'chevron' | 'dots';
+
+/**
+ * Level 0 wallpaper: the paper colour and print of the original photo, over a photo-scanned paper
+ * so it keeps real fibre, faint streaks and (for the stained variant) water marks.
+ */
+function wallpaper(paper: HTMLImageElement, wash: number, print: Print): HTMLCanvasElement {
   const S = COLOR_SIZE;
   const [c, ctx] = canvas(S);
   ctx.drawImage(paper, 0, 0, S, S);
@@ -77,79 +153,37 @@ function wallpaper(paper: HTMLImageElement, wash: number): HTMLCanvasElement {
   ctx.fillRect(0, 0, S, S);
 
   const [p, pc] = canvas(S);
-  pc.fillStyle = '#e2cd7a';
+  pc.fillStyle = print === 'chevron' ? PAPER_BASE : DOT_PAPER_BASE;
   pc.fillRect(0, 0, S, S);
-  const stripe = S / 3; // three stripes per sheet
-  for (let i = 0; i < 3; i++) {
-    const x = i * stripe;
-    // Plain band, slightly lighter.
-    pc.fillStyle = '#ead889';
-    pc.fillRect(x, 0, stripe * 0.42, S);
-    // Thin pinstripes framing the chevron band.
-    pc.fillStyle = 'rgba(160, 130, 55, 0.7)';
-    pc.fillRect(x + stripe * 0.45, 0, 4, S);
-    pc.fillRect(x + stripe * 0.97, 0, 4, S);
-    // Chevron band: stacked Vs.
-    pc.strokeStyle = 'rgba(175, 145, 65, 0.8)';
-    pc.lineWidth = 8;
-    const bx = x + stripe * 0.5;
-    const bw = stripe * 0.44;
-    const step = S / 15; // divides the sheet exactly, so the chevrons tile vertically
-    pc.beginPath();
-    for (let y = -step; y < S + step; y += step) {
-      pc.moveTo(bx, y);
-      pc.lineTo(bx + bw / 2, y + step * 0.6);
-      pc.lineTo(bx + bw, y);
-    }
-    pc.stroke();
-  }
   ctx.globalCompositeOperation = 'multiply';
   ctx.drawImage(p, 0, 0);
   ctx.globalCompositeOperation = 'source-over';
+  // The print sits on top: pale grey-cream with a faint darker edge (chevrons), darker dots.
+  if (print === 'chevron') drawChevronPrint(ctx, S, 'rgba(240, 236, 196, 1)', 'rgba(110, 106, 70, 0.8)');
+  else drawDotPrint(ctx, S, 'rgba(96, 92, 52, 0.85)');
   return c;
 }
 
 const EMBOSS_SIZE = 1024;
 
 /**
- * Embossed vinyl: the pinstripes and chevrons are raised, the plain band has a soft flocked
- * texture, and the paper's own fibre adds fine grain — as a normal map, so the pattern stands out
- * in relief when the ceiling panels light it from above.
+ * Printed paper, not vinyl: the relief is the paper's own fibre plus the faintest lift where the
+ * ink sits — enough for light to catch the surface, never ridges.
  */
-function wallpaperNormal(paper: HTMLImageElement): THREE.DataTexture {
+function wallpaperNormal(paper: HTMLImageElement, print: Print): THREE.DataTexture {
   const S = EMBOSS_SIZE;
   const [, ctx] = canvas(S);
-  // Paper grain first, faint.
   ctx.drawImage(paper, 0, 0, S, S);
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
   ctx.fillRect(0, 0, S, S);
-  const stripe = S / 3;
-  ctx.filter = 'blur(1.5px)';
-  for (let i = 0; i < 3; i++) {
-    const x = i * stripe;
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.25)'; // flocked plain band, slightly proud
-    ctx.fillRect(x, 0, stripe * 0.42, S);
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(x + stripe * 0.45, 0, 3, S);
-    ctx.fillRect(x + stripe * 0.97, 0, 3, S);
-    ctx.strokeStyle = '#fff';
-    ctx.lineWidth = 5;
-    const bx = x + stripe * 0.5;
-    const bw = stripe * 0.44;
-    const step = S / 15;
-    ctx.beginPath();
-    for (let y = -step; y < S + step; y += step) {
-      ctx.moveTo(bx, y);
-      ctx.lineTo(bx + bw / 2, y + step * 0.6);
-      ctx.lineTo(bx + bw, y);
-    }
-    ctx.stroke();
-  }
-  ctx.filter = 'none';
+  ctx.globalAlpha = 0.18;
+  if (print === 'chevron') drawChevronPrint(ctx, S, '#fff');
+  else drawDotPrint(ctx, S, '#fff');
+  ctx.globalAlpha = 1;
   const img = ctx.getImageData(0, 0, S, S).data;
   const height = new Float32Array(S * S);
   for (let i = 0; i < height.length; i++) height[i] = img[i * 4 + 1] / 255;
-  const tex = new THREE.DataTexture(heightToNormal(height, S, 6), S, S, THREE.RGBAFormat);
+  const tex = new THREE.DataTexture(heightToNormal(height, S, 2), S, S, THREE.RGBAFormat);
   // DataTexture rows run bottom-up; the height rows ran top-down.
   tex.flipY = true;
   tex.generateMipmaps = true;
@@ -159,69 +193,104 @@ function wallpaperNormal(paper: HTMLImageElement): THREE.DataTexture {
   return tex;
 }
 
-/** Carpet016 is a clean beige low-pile; Level 0's is a dingy mustard with worn mottling. */
+/** Carpet016 is a clean beige low-pile; Level 0's is flat khaki, the same family as the walls. */
 function carpet(photo: HTMLImageElement, rng: Rng): HTMLCanvasElement {
   const S = COLOR_SIZE;
   const [c, ctx] = canvas(S);
   ctx.drawImage(photo, 0, 0, S, S);
   ctx.globalCompositeOperation = 'multiply';
-  ctx.fillStyle = '#d8b862';
+  ctx.fillStyle = '#bcab68';
   ctx.fillRect(0, 0, S, S);
   ctx.globalCompositeOperation = 'source-over';
   for (let i = 0; i < 18; i++) {
     const light = rng.chance(0.5);
-    wrappedBlob(ctx, rng.range(0, S), rng.range(0, S), rng.range(200, 600), light ? 'rgba(210, 190, 120, 0.08)' : 'rgba(80, 65, 30, 0.08)', S);
+    wrappedBlob(ctx, rng.range(0, S), rng.range(0, S), rng.range(200, 600), light ? 'rgba(210, 200, 130, 0.07)' : 'rgba(80, 70, 30, 0.08)', S);
   }
   return c;
 }
 
-/** Ceiling tile colour, nudged from stark white toward the aged, slightly yellow tiles of Level 0. */
+/** Ceiling tiles aged to the cream-yellow of the photo (never stark white). */
 function ceiling(photo: HTMLImageElement): HTMLCanvasElement {
   const S = COLOR_SIZE;
   const [c, ctx] = canvas(S);
   ctx.drawImage(photo, 0, 0, S, S);
+  // Soften the tile edges painted into the scan: the grid should barely show.
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
+  ctx.fillRect(0, 0, S, S);
   ctx.globalCompositeOperation = 'multiply';
-  ctx.fillStyle = '#e6dcb8';
+  ctx.fillStyle = '#e9dc9c';
   ctx.fillRect(0, 0, S, S);
   ctx.globalCompositeOperation = 'source-over';
   return c;
 }
 
-/** A 2×4 ft troffer: bright prismatic diffuser inside an off-white metal frame. */
+/** A square 2×2 ft panel (Kane Pixels' Level 0): bright prismatic diffuser in a thin frame. */
 function troffer(): HTMLCanvasElement {
   const W = 256;
-  const H = 512;
+  const [c, ctx] = canvas(W);
+  ctx.fillStyle = '#c9c2a4';
+  ctx.fillRect(0, 0, W, W);
+  const f = 8;
+  const g = ctx.createRadialGradient(W / 2, W / 2, W * 0.1, W / 2, W / 2, W * 0.7);
+  g.addColorStop(0, '#ffffff');
+  g.addColorStop(1, '#f1ecd8');
+  ctx.fillStyle = g;
+  ctx.fillRect(f, f, W - f * 2, W - f * 2);
+  ctx.fillStyle = 'rgba(200, 190, 160, 0.16)';
+  for (let y = f; y < W - f; y += 6) for (let x = f + ((y / 6) % 2) * 3; x < W - f; x += 6) ctx.fillRect(x, y, 2, 2);
+  return c;
+}
+
+/** A beige duplex outlet plate with two sockets. */
+function outletPlate(): HTMLCanvasElement {
+  const W = 128;
+  const H = 192;
   const c = document.createElement('canvas');
   c.width = W;
   c.height = H;
   const ctx = c.getContext('2d');
   if (!ctx) throw new Error('2D canvas unavailable');
-  ctx.fillStyle = '#b8b3a0';
+  ctx.fillStyle = '#e4dcc0';
   ctx.fillRect(0, 0, W, H);
-  const f = 14;
-  const g = ctx.createLinearGradient(f, 0, W - f, 0);
-  g.addColorStop(0, '#f2ecd6');
-  g.addColorStop(0.5, '#fffdf4');
-  g.addColorStop(1, '#f2ecd6');
-  ctx.fillStyle = g;
-  ctx.fillRect(f, f, W - f * 2, H - f * 2);
-  // Prismatic diffuser texture.
-  ctx.fillStyle = 'rgba(200, 190, 160, 0.18)';
-  for (let y = f; y < H - f; y += 6) for (let x = f + ((y / 6) % 2) * 3; x < W - f; x += 6) ctx.fillRect(x, y, 2, 2);
+  ctx.strokeStyle = 'rgba(90, 80, 50, 0.45)';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(2, 2, W - 4, H - 4);
+  for (const cy of [H * 0.3, H * 0.7]) {
+    ctx.fillStyle = '#d6cdb0';
+    ctx.beginPath();
+    ctx.ellipse(W / 2, cy, W * 0.3, H * 0.13, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#2a2418';
+    ctx.fillRect(W * 0.34, cy - H * 0.05, W * 0.06, H * 0.09);
+    ctx.fillRect(W * 0.6, cy - H * 0.05, W * 0.06, H * 0.09);
+    ctx.beginPath();
+    ctx.arc(W / 2, cy + H * 0.075, W * 0.045, 0, Math.PI);
+    ctx.fill();
+  }
+  ctx.fillStyle = '#8a8066';
+  ctx.beginPath();
+  ctx.arc(W / 2, H / 2, W * 0.04, 0, Math.PI * 2);
+  ctx.fill();
   return c;
 }
 
 export interface WorldMaterials {
+  /** The chevron-and-chain paper of the original photo. */
   wall: THREE.MeshStandardMaterial;
-  /** Same wallpaper printed over water-stained paper. */
+  /** The small-dot paper on some partitions. */
+  wallDots: THREE.MeshStandardMaterial;
+  /** The chevron paper printed over water-stained paper. */
   wallStained: THREE.MeshStandardMaterial;
-  baseboard: THREE.MeshStandardMaterial;
-  /** Off-white painted steel of the ceiling grid. */
+  /** Thin brown bumper rail low on some walls (the photo has no white skirting). */
+  rail: THREE.MeshStandardMaterial;
+  /** Painted steel of the ceiling grid, barely darker than the tiles. */
   tbar: THREE.MeshStandardMaterial;
   floor: THREE.MeshStandardMaterial;
   ceiling: THREE.MeshStandardMaterial;
   /** Unlit and HDR (colour > 1, so it blooms); per-instance colour dims individual panels. */
   troffer: THREE.MeshBasicMaterial;
+  /** Outlet plates (instanced; instance colour carries the baked light). */
+  outlet: THREE.MeshStandardMaterial;
 }
 
 const images = new THREE.ImageLoader();
@@ -243,30 +312,33 @@ export async function loadWorldMaterials(rng: Rng): Promise<WorldMaterials> {
     textures.loadAsync(ceilingNormal),
   ]);
   const W = TEXTURE_METRES.wallpaper;
-  const paperNormalMap = finish(wallpaperNormal(paper), W, false);
   const paperRoughMap = finish(paperR, W, false);
   // Every surface is lit per pixel by the ceiling panels (see lighting/panelLights.ts).
-  const lit = <T extends THREE.MeshStandardMaterial>(m: T, drop?: number) => withPanelLights(m, { intensity: PANEL_INTENSITY, drop });
-  const wallMat = (img: HTMLImageElement, wash: number) =>
+  const lit = <T extends THREE.MeshStandardMaterial>(m: T, drop?: number, intensity = PANEL_INTENSITY) => withPanelLights(m, { intensity, drop });
+  const normals = { chevron: finish(wallpaperNormal(paper, 'chevron'), W, false), dots: finish(wallpaperNormal(paper, 'dots'), W, false) };
+  const wallMat = (img: HTMLImageElement, wash: number, print: Print) =>
     lit(
       new THREE.MeshStandardMaterial({
-        map: finish(new THREE.CanvasTexture(wallpaper(img, wash)), W, true),
-        normalMap: paperNormalMap,
-        normalScale: new THREE.Vector2(1, 1),
+        map: finish(new THREE.CanvasTexture(wallpaper(img, wash, print)), W, true),
+        normalMap: normals[print],
+        normalScale: new THREE.Vector2(0.6, 0.6),
         roughnessMap: paperRoughMap,
         roughness: 1,
         vertexColors: true,
       }),
     );
+  const plate = new THREE.CanvasTexture(outletPlate());
+  plate.colorSpace = THREE.SRGBColorSpace;
   return {
-    wall: wallMat(paper, 0.55),
-    wallStained: wallMat(stained, 0.35),
-    baseboard: lit(new THREE.MeshStandardMaterial({ color: 0xd9d0b4, roughness: 0.45, vertexColors: true })),
-    tbar: lit(new THREE.MeshStandardMaterial({ color: new THREE.Color(1.35, 1.32, 1.22), roughness: 0.5, metalness: 0.1, vertexColors: true, side: THREE.DoubleSide }), 1.1),
+    wall: wallMat(paper, 0.6, 'chevron'),
+    wallDots: wallMat(paper, 0.6, 'dots'),
+    wallStained: wallMat(stained, 0.4, 'chevron'),
+    rail: lit(new THREE.MeshStandardMaterial({ color: 0x6f5535, roughness: 0.6, vertexColors: true })),
+    tbar: lit(new THREE.MeshStandardMaterial({ color: new THREE.Color(0.95, 0.9, 0.72), roughness: 0.7, vertexColors: true, side: THREE.DoubleSide }), 1.1, CEILING_PANEL_INTENSITY),
     floor: lit(new THREE.MeshStandardMaterial({
       map: finish(new THREE.CanvasTexture(carpet(carpetImg, rng)), TEXTURE_METRES.carpet, true),
       normalMap: finish(carpetN, TEXTURE_METRES.carpet, false),
-      normalScale: new THREE.Vector2(1.6, 1.6),
+      normalScale: new THREE.Vector2(1.2, 1.2),
       roughnessMap: finish(carpetR, TEXTURE_METRES.carpet, false),
       roughness: 1,
       vertexColors: true,
@@ -274,17 +346,19 @@ export async function loadWorldMaterials(rng: Rng): Promise<WorldMaterials> {
     ceiling: lit(new THREE.MeshStandardMaterial({
       map: finish(new THREE.CanvasTexture(ceiling(ceilingImg)), TEXTURE_METRES.ceiling, true),
       normalMap: finish(ceilN, TEXTURE_METRES.ceiling, false),
-      normalScale: new THREE.Vector2(0.9, 0.9),
+      normalScale: new THREE.Vector2(0.5, 0.5),
       // Matte mineral tile: no roughness map (its low values made glints near the panels).
       roughness: 1,
-      // > 1: the ceiling gets little fill light from above, so lift its albedo.
-      color: new THREE.Color(1.5, 1.5, 1.5),
+      // Lifted a little (little fill reaches it from above), but kept below the walls between the
+      // lights, as in Kane Pixels' footage.
+      color: new THREE.Color(0.5, 0.5, 0.48),
       vertexColors: true,
-    }), 1.1),
+    }), 1.1, CEILING_PANEL_INTENSITY),
     troffer: new THREE.MeshBasicMaterial({
       map: finish(new THREE.CanvasTexture(troffer()), 1, true),
-      color: new THREE.Color(3.2, 3.05, 2.7),
+      color: new THREE.Color(2.0, 1.97, 1.85),
       fog: true,
     }),
+    outlet: lit(new THREE.MeshStandardMaterial({ map: plate, roughness: 0.45 })),
   };
 }
