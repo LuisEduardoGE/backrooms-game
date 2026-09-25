@@ -8,6 +8,9 @@ import ceilingNormal from '../assets/textures/OfficeCeiling001/NormalGL.jpg';
 import paperColor from '../assets/textures/Wallpaper001C/Color.jpg';
 import paperRough from '../assets/textures/Wallpaper001C/Roughness.jpg';
 import stainedColor from '../assets/textures/Wallpaper002B/Color.jpg';
+import backroomsColor from '../assets/textures/BackroomsWallpaperOGA/Color.jpg';
+import backroomsNormal from '../assets/textures/BackroomsWallpaperOGA/NormalGL.jpg';
+import backroomsRough from '../assets/textures/BackroomsWallpaperOGA/Roughness.jpg';
 import type { PanelMap } from '../lighting/panelMap';
 import { withPanelLights } from '../lighting/panelLights';
 import { heightToNormal } from './normalMap';
@@ -17,7 +20,7 @@ import { heightToNormal } from './normalMap';
  * so these are the only knobs for pattern scale.
  */
 export const TEXTURE_METRES = {
-  /** One wallpaper sheet: 0.6 m, eight 7.5 cm bands (the original photo's scale). */
+  /** One wallpaper sheet: 0.6 m — the scan's eight chevron columns at the photo's 7.5 cm spacing. */
   wallpaper: 0.6,
   carpet: 2.5,
   /** OfficeCeiling001 has 6×6 tiles per texture → 2/3 m tiles, exactly 3 per 2 m cell. */
@@ -70,59 +73,8 @@ function wrappedBlob(ctx: CanvasRenderingContext2D, x: number, y: number, r: num
   }
 }
 
-/** Pale yellow-green paper, sampled from the original 2002 photo and corrected for its lighting. */
-const PAPER_BASE = '#dccc6c';
-/** The second paper on some partitions (the photo's left wall) is a shade deeper. */
+/** The second paper on some partitions (the photo's left wall): pale yellow with small dots. */
 const DOT_PAPER_BASE = '#d6c464';
-
-/**
- * The print of the original Backrooms wallpaper (DSC00161): vertical bands every 7.5 cm — a column
- * of small, stacked double chevrons pointing up, staggered between columns, alternating with a
- * thin dotted "chain" line. Drawn in `ink` so the same routine makes the colour print and the
- * height mask. `unit` = pixels per sheet (the sheet is TEXTURE_METRES.wallpaper wide).
- */
-function drawChevronPrint(ctx: CanvasRenderingContext2D, unit: number, ink: string, outline?: string): void {
-  const bands = 8; // 0.6 m sheet / 7.5 cm
-  const band = unit / bands;
-  const rows = 12; // chevron pairs per sheet height (5 cm apart); divides the sheet, so it tiles
-  const step = unit / rows;
-  const w = band * 0.42; // chevron width ≈ 3 cm
-  for (let b = 0; b < bands; b++) {
-    const cx = b * band + band * 0.5;
-    const offset = b % 2 === 0 ? 0 : step / 2; // staggered between columns
-    for (let r = -1; r <= rows; r++) {
-      const y = r * step + offset;
-      for (const dy of [0, step * 0.28]) {
-        ctx.beginPath();
-        ctx.moveTo(cx - w / 2, y + dy + w * 0.32);
-        ctx.lineTo(cx, y + dy);
-        ctx.lineTo(cx + w / 2, y + dy + w * 0.32);
-        if (outline) {
-          ctx.strokeStyle = outline;
-          ctx.lineWidth = unit * 0.012;
-          ctx.stroke();
-        }
-        ctx.strokeStyle = ink;
-        ctx.lineWidth = unit * 0.008;
-        ctx.stroke();
-      }
-    }
-    // The dotted chain line between chevron columns.
-    const lx = b * band;
-    const links = 48;
-    for (let k = 0; k < links; k++) {
-      const y = (k + 0.5) * (unit / links);
-      ctx.beginPath();
-      ctx.ellipse(lx, y, unit * 0.0045, unit * 0.0085, 0, 0, Math.PI * 2);
-      ctx.fillStyle = outline ?? ink;
-      ctx.fill();
-      ctx.beginPath();
-      ctx.ellipse(lx, y, unit * 0.0028, unit * 0.0062, 0, 0, Math.PI * 2);
-      ctx.fillStyle = ink;
-      ctx.fill();
-    }
-  }
-}
 
 /** The dot paper: tiny dots on a diagonal grid about 2 cm apart. */
 function drawDotPrint(ctx: CanvasRenderingContext2D, unit: number, ink: string): void {
@@ -139,29 +91,40 @@ function drawDotPrint(ctx: CanvasRenderingContext2D, unit: number, ink: string):
   }
 }
 
-type Print = 'chevron' | 'dots';
-
 /**
- * Level 0 wallpaper: the paper colour and print of the original photo, over a photo-scanned paper
- * so it keeps real fibre, faint streaks and (for the stained variant) water marks.
+ * The dot paper: a photo-scanned paper (real fibre and faint streaks) tinted pale yellow, with the
+ * small-dot print of the original photo's second wall.
  */
-function wallpaper(paper: HTMLImageElement, wash: number, print: Print): HTMLCanvasElement {
+function dotPaper(paper: HTMLImageElement, wash: number): HTMLCanvasElement {
   const S = COLOR_SIZE;
   const [c, ctx] = canvas(S);
   ctx.drawImage(paper, 0, 0, S, S);
   // Wash the photo toward white: keep its fibre and faint streaks, lose the heavy blotches.
   ctx.fillStyle = `rgba(255, 255, 255, ${wash})`;
   ctx.fillRect(0, 0, S, S);
-
-  const [p, pc] = canvas(S);
-  pc.fillStyle = print === 'chevron' ? PAPER_BASE : DOT_PAPER_BASE;
-  pc.fillRect(0, 0, S, S);
   ctx.globalCompositeOperation = 'multiply';
-  ctx.drawImage(p, 0, 0);
+  ctx.fillStyle = DOT_PAPER_BASE;
+  ctx.fillRect(0, 0, S, S);
   ctx.globalCompositeOperation = 'source-over';
-  // The print sits on top: pale grey-cream with a faint darker edge (chevrons), darker dots.
-  if (print === 'chevron') drawChevronPrint(ctx, S, 'rgba(240, 236, 196, 1)', 'rgba(110, 106, 70, 0.8)');
-  else drawDotPrint(ctx, S, 'rgba(96, 92, 52, 0.85)');
+  drawDotPrint(ctx, S, 'rgba(96, 92, 52, 0.85)');
+  return c;
+}
+
+/**
+ * The chevron paper with water damage: the scanned Backrooms wallpaper multiplied by a
+ * photo-scanned stained paper (washed so only the stains come through).
+ */
+function stainedPaper(wallpaperImg: HTMLImageElement, stains: HTMLImageElement): HTMLCanvasElement {
+  const S = COLOR_SIZE;
+  const [c, ctx] = canvas(S);
+  ctx.drawImage(wallpaperImg, 0, 0, S, S);
+  const [m, mc] = canvas(S);
+  mc.drawImage(stains, 0, 0, S, S);
+  mc.fillStyle = 'rgba(255, 255, 255, 0.35)';
+  mc.fillRect(0, 0, S, S);
+  ctx.globalCompositeOperation = 'multiply';
+  ctx.drawImage(m, 0, 0);
+  ctx.globalCompositeOperation = 'source-over';
   return c;
 }
 
@@ -171,15 +134,14 @@ const EMBOSS_SIZE = 1024;
  * Printed paper, not vinyl: the relief is the paper's own fibre plus the faintest lift where the
  * ink sits — enough for light to catch the surface, never ridges.
  */
-function wallpaperNormal(paper: HTMLImageElement, print: Print): THREE.DataTexture {
+function wallpaperNormal(paper: HTMLImageElement): THREE.DataTexture {
   const S = EMBOSS_SIZE;
   const [, ctx] = canvas(S);
   ctx.drawImage(paper, 0, 0, S, S);
   ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
   ctx.fillRect(0, 0, S, S);
   ctx.globalAlpha = 0.18;
-  if (print === 'chevron') drawChevronPrint(ctx, S, '#fff');
-  else drawDotPrint(ctx, S, '#fff');
+  drawDotPrint(ctx, S, '#fff');
   ctx.globalAlpha = 1;
   const img = ctx.getImageData(0, 0, S, S).data;
   const height = new Float32Array(S * S);
@@ -276,7 +238,7 @@ function outletPlate(): HTMLCanvasElement {
 }
 
 export interface WorldMaterials {
-  /** The chevron-and-chain paper of the original photo. */
+  /** The chevron-and-chain paper of the original photo (CC0 scan, OpenGameArt). */
   wall: THREE.MeshStandardMaterial;
   /** The small-dot paper on some partitions. */
   wallDots: THREE.MeshStandardMaterial;
@@ -302,7 +264,7 @@ const textures = new THREE.TextureLoader();
  * Baked light and contact shadows arrive as vertex colours on every surface.
  */
 export async function loadWorldMaterials(rng: Rng, panels: PanelMap): Promise<WorldMaterials> {
-  const [paper, stained, carpetImg, ceilingImg, paperR, carpetN, carpetR, ceilN] = await Promise.all([
+  const [paper, stained, carpetImg, ceilingImg, paperR, carpetN, carpetR, ceilN, bgColor, bgNormal, bgRough] = await Promise.all([
     images.loadAsync(paperColor),
     images.loadAsync(stainedColor),
     images.loadAsync(carpetColor),
@@ -311,29 +273,35 @@ export async function loadWorldMaterials(rng: Rng, panels: PanelMap): Promise<Wo
     textures.loadAsync(carpetNormal),
     textures.loadAsync(carpetRough),
     textures.loadAsync(ceilingNormal),
+    images.loadAsync(backroomsColor),
+    textures.loadAsync(backroomsNormal),
+    textures.loadAsync(backroomsRough),
   ]);
   const W = TEXTURE_METRES.wallpaper;
   const paperRoughMap = finish(paperR, W, false);
   // Every surface is lit per pixel by the ceiling panels (see lighting/panelLights.ts).
   const lit = <T extends THREE.MeshStandardMaterial>(m: T, drop?: number, intensity = PANEL_INTENSITY) => withPanelLights(m, { intensity, drop, panels });
-  const normals = { chevron: finish(wallpaperNormal(paper, 'chevron'), W, false), dots: finish(wallpaperNormal(paper, 'dots'), W, false) };
-  const wallMat = (img: HTMLImageElement, wash: number, print: Print) =>
+  const bgNormalMap = finish(bgNormal, W, false);
+  const bgRoughMap = finish(bgRough, W, false);
+  const paperMat = (map: HTMLCanvasElement | HTMLImageElement, normalMap: THREE.Texture, roughnessMap: THREE.Texture) =>
     lit(
       new THREE.MeshStandardMaterial({
-        map: finish(new THREE.CanvasTexture(wallpaper(img, wash, print)), W, true),
-        normalMap: normals[print],
-        normalScale: new THREE.Vector2(0.6, 0.6),
-        roughnessMap: paperRoughMap,
+        map: finish(map instanceof HTMLCanvasElement ? new THREE.CanvasTexture(map) : new THREE.Texture(map), W, true),
+        normalMap,
+        normalScale: new THREE.Vector2(0.8, 0.8),
+        roughnessMap,
         roughness: 1,
         vertexColors: true,
       }),
     );
+  const chevron = paperMat(bgColor, bgNormalMap, bgRoughMap);
+  chevron.map!.needsUpdate = true;
   const plate = new THREE.CanvasTexture(outletPlate());
   plate.colorSpace = THREE.SRGBColorSpace;
   return {
-    wall: wallMat(paper, 0.6, 'chevron'),
-    wallDots: wallMat(paper, 0.6, 'dots'),
-    wallStained: wallMat(stained, 0.4, 'chevron'),
+    wall: chevron,
+    wallDots: paperMat(dotPaper(paper, 0.6), finish(wallpaperNormal(paper), W, false), paperRoughMap),
+    wallStained: paperMat(stainedPaper(bgColor, stained), bgNormalMap, bgRoughMap),
     rail: lit(new THREE.MeshStandardMaterial({ color: 0x6f5535, roughness: 0.6, vertexColors: true })),
     tbar: lit(new THREE.MeshStandardMaterial({ color: new THREE.Color(0.6, 0.57, 0.45), roughness: 0.7, vertexColors: true, side: THREE.DoubleSide }), 1.1, CEILING_PANEL_INTENSITY),
     floor: lit(new THREE.MeshStandardMaterial({

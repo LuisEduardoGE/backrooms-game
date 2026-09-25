@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Cell, createGrid, type Grid, PILLAR_SIZE, setCell } from '../../src/world/grid';
 import { solidRects, WALL_THICKNESS } from '../../src/world/solids';
-import { outletSpots, type WallQuad, wallQuads } from '../../src/world/wallFaces';
+import { faceStyle, outletSpots, type WallQuad, wallQuads } from '../../src/world/wallFaces';
 
 /** 12×12 floor with no border, so only hand-placed solids exist. */
 function open(): Grid {
@@ -99,5 +99,58 @@ describe('outletSpots', () => {
     const spots = outletSpots(quads);
     expect(spots.length).toBeLessThanOrEqual(Math.ceil(total / 4));
     expect(outletSpots(quads)).toEqual(spots);
+  });
+});
+
+describe('faceStyle', () => {
+  /** Two rooms side by side (ids 1 and 2) split by a wall on x = 6, with a column in room 1. */
+  function rooms(): Grid {
+    const g = createGrid(12, 8);
+    for (let y = 1; y < 7; y++) {
+      for (let x = 1; x < 11; x++) {
+        if (x === 6) continue;
+        setCell(g, x, y, Cell.Floor);
+        g.room[y * 12 + x] = x < 6 ? 1 : 2;
+      }
+    }
+    setCell(g, 3, 3, Cell.Pillar);
+    g.room[3 * 12 + 3] = -1;
+    return g;
+  }
+
+  it('gives every face that looks into one room the same paper and rail choice', () => {
+    const g = rooms();
+    const quads = wallQuads(g, 0, 0, 12);
+    const intoRoom1 = quads.filter((q) => {
+      // The floor cell in front of the face (the wall cell itself has no room id).
+      const x = Math.floor(((q.x0 + q.x1) / 2 + q.nx * 1.2) / 2);
+      const z = Math.floor(((q.z0 + q.z1) / 2 + q.nz * 1.2) / 2);
+      return g.room[z * 12 + x] === 1 && Math.hypot(q.x1 - q.x0, q.z1 - q.z0) > 1.1;
+    });
+    expect(intoRoom1.length).toBeGreaterThan(3);
+    const styles = intoRoom1.map((q) => faceStyle(g, q));
+    for (const s of styles) {
+      expect(s.paper).toBe(styles[0].paper);
+      expect(s.rail).toBe(styles[0].rail);
+    }
+  });
+
+  it('never puts a rail on a column or on a short wall end', () => {
+    const g = rooms();
+    for (const q of wallQuads(g, 0, 0, 12)) {
+      const len = Math.hypot(q.x1 - q.x0, q.z1 - q.z0);
+      const behindX = Math.floor(((q.x0 + q.x1) / 2 - q.nx * 0.05) / 2);
+      const behindZ = Math.floor(((q.z0 + q.z1) / 2 - q.nz * 0.05) / 2);
+      const isColumn = g.cells[behindZ * 12 + behindX] === Cell.Pillar;
+      if (isColumn || len < 0.5) expect(faceStyle(g, q).rail).toBe(false);
+    }
+  });
+
+  it('dresses a column in its room\'s paper on all four faces', () => {
+    const g = rooms();
+    const column = wallQuads(g, 0, 0, 12).filter((q) => Math.abs((q.x0 + q.x1) / 2 - 7) < 0.6 && Math.abs((q.z0 + q.z1) / 2 - 7) < 0.6);
+    expect(column).toHaveLength(4);
+    const papers = new Set(column.map((q) => faceStyle(g, q).paper));
+    expect(papers.size).toBe(1);
   });
 });
