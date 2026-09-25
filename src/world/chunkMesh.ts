@@ -2,10 +2,12 @@ import * as THREE from 'three';
 import { isLightCell } from '../lighting/lights';
 import { CHUNK_CELLS } from './chunks';
 import { Cell, CELL_SIZE, cellToWorld, type Grid, getCell, isDark, PILLAR_SIZE, WALL_HEIGHT } from './grid';
+import { solidRects } from './solids';
 import type { WorldMaterials } from './textures';
 
 // Shared by every chunk; never disposed.
-const wallGeo = new THREE.BoxGeometry(CELL_SIZE, WALL_HEIGHT, CELL_SIZE);
+/** Unit box, scaled per instance to each thin wall slab. */
+const wallGeo = new THREE.BoxGeometry(1, 1, 1);
 const pillarGeo = new THREE.BoxGeometry(PILLAR_SIZE, WALL_HEIGHT, PILLAR_SIZE);
 const floorGeo = new THREE.PlaneGeometry(CELL_SIZE, CELL_SIZE).rotateX(-Math.PI / 2);
 const ceilingGeo = new THREE.PlaneGeometry(CELL_SIZE, CELL_SIZE).rotateX(Math.PI / 2);
@@ -18,6 +20,25 @@ function instanced(geo: THREE.BufferGeometry, mat: THREE.Material, positions: nu
   for (let i = 0; i < count; i++) {
     m.makeTranslation(positions[i * 3], positions[i * 3 + 1], positions[i * 3 + 2]);
     mesh.setMatrixAt(i, m);
+  }
+  mesh.instanceMatrix.needsUpdate = true;
+  mesh.computeBoundingSphere();
+  return mesh;
+}
+
+/** One instance per thin wall slab: [centreX, centreZ, sizeX, sizeZ] per slab. */
+function instancedSlabs(mat: THREE.Material, slabs: number[]): THREE.InstancedMesh | null {
+  const count = slabs.length / 4;
+  if (count === 0) return null;
+  const mesh = new THREE.InstancedMesh(wallGeo, mat, count);
+  const m = new THREE.Matrix4();
+  const pos = new THREE.Vector3();
+  const rot = new THREE.Quaternion();
+  const scale = new THREE.Vector3();
+  for (let i = 0; i < count; i++) {
+    pos.set(slabs[i * 4], WALL_HEIGHT / 2, slabs[i * 4 + 1]);
+    scale.set(slabs[i * 4 + 2], WALL_HEIGHT, slabs[i * 4 + 3]);
+    mesh.setMatrixAt(i, m.compose(pos, rot, scale));
   }
   mesh.instanceMatrix.needsUpdate = true;
   mesh.computeBoundingSphere();
@@ -53,7 +74,13 @@ export function buildChunk(grid: Grid, cx: number, cy: number, mats: WorldMateri
       const wz = cellToWorld(y);
       const c = getCell(grid, x, y);
       if (c === Cell.Wall) {
-        if (isExposedWall(grid, x, y)) walls.push(wx, WALL_HEIGHT / 2, wz);
+        if (!isExposedWall(grid, x, y)) continue;
+        // Thin partitions: the rest of a wall cell is open floor under an ordinary ceiling.
+        for (const r of solidRects(grid, x, y)) {
+          walls.push((r.minX + r.maxX) / 2, (r.minZ + r.maxZ) / 2, r.maxX - r.minX, r.maxZ - r.minZ);
+        }
+        floors.push(wx, 0, wz);
+        ceilings.push(wx, WALL_HEIGHT, wz);
         continue;
       }
       if (c === Cell.Pillar) pillars.push(wx, WALL_HEIGHT / 2, wz);
@@ -66,7 +93,7 @@ export function buildChunk(grid: Grid, cx: number, cy: number, mats: WorldMateri
   const group = new THREE.Group();
   group.name = `chunk ${cx},${cy}`;
   const meshes = [
-    instanced(wallGeo, mats.wall, walls),
+    instancedSlabs(mats.wall, walls),
     instanced(pillarGeo, mats.wall, pillars),
     instanced(floorGeo, mats.floor, floors),
     instanced(ceilingGeo, mats.ceiling, ceilings),

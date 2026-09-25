@@ -4,6 +4,7 @@ import { ARROW_SPACING_MIN, DECOY_COUNT, placeArrows, shortestPath } from '../..
 import { generateLevel } from '../../src/world/generator';
 import { Cell, createGrid, DIR_STEP, getCell, setCell } from '../../src/world/grid';
 import { bfsDistances } from '../../src/world/pathing';
+import { hasFullFace } from '../../src/world/solids';
 
 const level = generateLevel(42);
 const path = shortestPath(level.grid, level.start, level.exit);
@@ -58,11 +59,21 @@ describe('placeArrows', () => {
       expect(getCell(level.grid, a.cell.x + DIR_STEP[a.wall].x, a.cell.y + DIR_STEP[a.wall].y)).toBe(Cell.Wall);
       const w = DIR_STEP[a.wall];
       const p = DIR_STEP[a.points];
-      expect(w.x * p.x + w.y * p.y).toBe(0);
+      expect(Math.abs(w.x * p.x + w.y * p.y)).toBe(0); // perpendicular (abs: avoids -0 vs +0)
     }
   });
 
   it('is deterministic', () => {
     expect(placeArrows(level.grid, path, createRng(7))).toEqual(arrows);
+  });
+});
+
+describe('arrows on thin walls', () => {
+  it('paints every arrow on a flat, full-width wall face (never on a wall seen end-on)', () => {
+    for (const seed of [42, 7, 99]) {
+      const lv = generateLevel(seed);
+      const p = shortestPath(lv.grid, lv.start, lv.exit);
+      for (const a of placeArrows(lv.grid, p, createRng(seed))) expect(hasFullFace(lv.grid, a.cell.x, a.cell.y, a.wall)).toBe(true);
+    }
   });
 });

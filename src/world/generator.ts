@@ -1,6 +1,7 @@
 import { createRng, deriveSeed, type Rng } from '../core/rng';
 import { exitWallSide } from './exit';
-import { Cell, createGrid, type Dir, type Grid, getCell, type Point, setCell } from './grid';
+import { hasFullFace } from './solids';
+import { Cell, createGrid, type Dir, DIRS, type Grid, getCell, type Point, setCell } from './grid';
 import { bfsDistances } from './pathing';
 
 export interface Room {
@@ -371,13 +372,9 @@ function assignDarkZones(grid: Grid, rooms: Room[], startRoomId: number, rng: Rn
   for (const { i, a, b } of links) if (isDarkRoom[a] && isDarkRoom[b]) grid.dark[i] = 1;
 }
 
+/** The noclip wall needs a flat face spanning the whole cell (not a wall seen end-on). */
 function hasAdjacentWall(grid: Grid, x: number, y: number): boolean {
-  return (
-    getCell(grid, x + 1, y) === Cell.Wall ||
-    getCell(grid, x - 1, y) === Cell.Wall ||
-    getCell(grid, x, y + 1) === Cell.Wall ||
-    getCell(grid, x, y - 1) === Cell.Wall
-  );
+  return DIRS.some((d) => hasFullFace(grid, x, y, d));
 }
 
 /** Exit: reachable, lit floor cell against a wall (the future noclip wall), far from start. */

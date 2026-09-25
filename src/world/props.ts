@@ -3,6 +3,7 @@ import type { Arrow } from './clues';
 import type { Level } from './generator';
 import { CELL_SIZE, cellToWorld, type Dir, DIR_STEP, WALL_HEIGHT } from './grid';
 import type { Item } from './items';
+import { WALL_FACE_DISTANCE } from './solids';
 
 /** Y-rotation that turns a +Z-facing plane to face out of the given wall into the cell. */
 const FACE_ROTATION: Record<Dir, number> = { N: 0, S: Math.PI, W: Math.PI / 2, E: -Math.PI / 2 };
@@ -103,9 +104,9 @@ function noclipMaterial(): THREE.ShaderMaterial {
 function wallFacePosition(cell: { x: number; y: number }, side: Dir, offset: number, height: number): THREE.Vector3 {
   const s = DIR_STEP[side];
   return new THREE.Vector3(
-    cellToWorld(cell.x) + s.x * (CELL_SIZE / 2 - offset),
+    cellToWorld(cell.x) + s.x * (WALL_FACE_DISTANCE - offset),
     height,
-    cellToWorld(cell.y) + s.y * (CELL_SIZE / 2 - offset),
+    cellToWorld(cell.y) + s.y * (WALL_FACE_DISTANCE - offset),
   );
 }
 

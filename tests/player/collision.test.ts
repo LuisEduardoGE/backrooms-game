@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { moveWithCollision, PLAYER_RADIUS } from '../../src/player/collision';
 import { Cell, createGrid, setCell } from '../../src/world/grid';
+import { WALL_THICKNESS } from '../../src/world/solids';
+
+/** Thin walls: the border slab faces sit 0.9 m inside the wall cells (x = 1.1 and 8.9 for room(5)). */
+const FAR_FACE = 9 - WALL_THICKNESS / 2;
+const NEAR_FACE = 1 + WALL_THICKNESS / 2;
 
 /** size×size grid with a walled border and open floor inside. World interior spans [2, (size-1)*2]. */
 function room(size: number) {
@@ -15,15 +20,15 @@ describe('moveWithCollision', () => {
     expect(p).toEqual({ x: 5.5, z: 4.5 });
   });
 
-  it('stops flush against a wall in +x and -x', () => {
-    const g = room(5); // interior x ∈ [2, 8]
-    expect(moveWithCollision(g, { x: 7, z: 5 }, 1.9, 0).x).toBeCloseTo(8 - PLAYER_RADIUS, 3);
-    expect(moveWithCollision(g, { x: 3, z: 5 }, -1.9, 0).x).toBeCloseTo(2 + PLAYER_RADIUS, 3);
+  it('stops flush against a thin wall in +x and -x (walking into the wall cell up to its slab)', () => {
+    const g = room(5);
+    expect(moveWithCollision(g, { x: 7, z: 5 }, 1.9, 0).x).toBeCloseTo(FAR_FACE - PLAYER_RADIUS, 3);
+    expect(moveWithCollision(g, { x: 3, z: 5 }, -1.9, 0).x).toBeCloseTo(NEAR_FACE + PLAYER_RADIUS, 3);
   });
 
   it('slides along a wall instead of sticking', () => {
-    const p = moveWithCollision(room(5), { x: 7.69, z: 5 }, 0.5, 0.5);
-    expect(p.x).toBeCloseTo(8 - PLAYER_RADIUS, 3);
+    const p = moveWithCollision(room(5), { x: FAR_FACE - PLAYER_RADIUS - 0.01, z: 5 }, 0.5, 0.5);
+    expect(p.x).toBeCloseTo(FAR_FACE - PLAYER_RADIUS, 3);
     expect(p.z).toBeCloseTo(5.5, 5);
   });
 
@@ -31,8 +36,8 @@ describe('moveWithCollision', () => {
     const g = room(5);
     let p = { x: 7.5, z: 7.5 };
     for (let i = 0; i < 10; i++) p = moveWithCollision(g, p, 0.3, 0.3);
-    expect(p.x).toBeCloseTo(8 - PLAYER_RADIUS, 3);
-    expect(p.z).toBeCloseTo(8 - PLAYER_RADIUS, 3);
+    expect(p.x).toBeCloseTo(FAR_FACE - PLAYER_RADIUS, 3);
+    expect(p.z).toBeCloseTo(FAR_FACE - PLAYER_RADIUS, 3);
   });
 
   it('collides with the thin pillar box, not the whole pillar cell', () => {

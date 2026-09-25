@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_GEN, generateLevel } from '../../src/world/generator';
 import { Cell, DIR_STEP, getCell, isDark } from '../../src/world/grid';
 import { bfsDistances } from '../../src/world/pathing';
+import { hasFullFace } from '../../src/world/solids';
 
 describe('generateLevel', () => {
   it('is deterministic for a seed', () => {
@@ -120,6 +121,7 @@ describe('generateLevel', () => {
       expect(grid.room[exit.y * grid.width + exit.x]).toBeGreaterThanOrEqual(0);
       const step = DIR_STEP[exitSide];
       expect(getCell(grid, exit.x + step.x, exit.y + step.y)).toBe(Cell.Wall);
+      expect(hasFullFace(grid, exit.x, exit.y, exitSide)).toBe(true);
     }
   });
 });

@@ -72,7 +72,8 @@ describe('updatePlayer', () => {
 
   it('is stopped by walls', () => {
     const p = run(createPlayer({ x: 20, z: 20 }), input({ right: 1, sprint: true }), 100);
-    expect(p.pos.x).toBeCloseTo(38 - 0.3, 3);
+    // Border wall cell 19 spans 38..40: its thin slab's face is at 38.9.
+    expect(p.pos.x).toBeCloseTo(38.9 - 0.3, 3);
   });
 
   it('remembers the previous position and eye height for render interpolation', () => {

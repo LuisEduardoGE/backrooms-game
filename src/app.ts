@@ -30,6 +30,7 @@ import { parseParams, tapeUrl } from './ui/params';
 import { placeArrows, shortestPath } from './world/clues';
 import { createEntityViews } from './world/entityViews';
 import { reachedExit } from './world/exit';
+import { WALL_FACE_DISTANCE } from './world/solids';
 import { generateLevel } from './world/generator';
 import { Cell, CELL_SIZE, cellToWorld, DIR_STEP, getCell, isDark, worldToCell } from './world/grid';
 import { ITEM_COUNTS, type Item, placeItems } from './world/items';
@@ -188,8 +189,8 @@ showPhase();
 // Attract/trailer mode: no pointer lock; the camcorder walks the true path on its own.
 const autopilot = params.attract ? createAutopilot() : null;
 const exitFace = {
-  x: cellToWorld(level.exit.x) + (DIR_STEP[level.exitSide].x * CELL_SIZE) / 2,
-  z: cellToWorld(level.exit.y) + (DIR_STEP[level.exitSide].y * CELL_SIZE) / 2,
+  x: cellToWorld(level.exit.x) + DIR_STEP[level.exitSide].x * WALL_FACE_DISTANCE,
+  z: cellToWorld(level.exit.y) + DIR_STEP[level.exitSide].y * WALL_FACE_DISTANCE,
 };
 if (autopilot) {
   phase = 'playing';
