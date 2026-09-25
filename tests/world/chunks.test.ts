@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { chunkKey, chunkOf, chunksAround, diffChunks, parseChunkKey } from '../../src/world/chunks';
+import { chunkKey, chunkOf, chunksAround, diffChunks, parseChunkKey, planChunkWork } from '../../src/world/chunks';
 
 describe('chunks', () => {
   it('round-trips keys', () => {
@@ -31,5 +31,22 @@ describe('chunks', () => {
     const { toLoad, toUnload } = diffChunks(new Set(['0,0', '0,1']), new Set(['0,1', '1,1']));
     expect(toLoad).toEqual(['1,1']);
     expect(toUnload).toEqual(['0,0']);
+  });
+});
+
+describe('planChunkWork', () => {
+  it('unloads what is no longer wanted and queues missing chunks nearest-first', () => {
+    const loaded = new Set(['0,0', '5,5']);
+    const wanted = new Set(['0,0', '3,3', '4,3', '2,3', '6,6']);
+    const { toUnload, queue } = planChunkWork(loaded, wanted, 4, 3);
+    expect(toUnload).toEqual(['5,5']);
+    expect(queue[0]).toBe('4,3'); // the chunk the player stands in comes first
+    expect(queue).not.toContain('0,0');
+    expect(new Set(queue)).toEqual(new Set(['4,3', '3,3', '2,3', '6,6']));
+    const dist = (k: string) => {
+      const { cx, cy } = parseChunkKey(k);
+      return Math.max(Math.abs(cx - 4), Math.abs(cy - 3));
+    };
+    for (let i = 1; i < queue.length; i++) expect(dist(queue[i])).toBeGreaterThanOrEqual(dist(queue[i - 1]));
   });
 });

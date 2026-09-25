@@ -75,6 +75,9 @@ const seed = params.seed ?? Math.floor(Math.random() * 0xffffffff) >>> 0;
 const level = generateLevel(seed);
 const materials = createWorldMaterials(createRng(deriveSeed(seed, 'textures')));
 const streamer = createChunkStreamer(scene, level.grid, materials);
+// Build the whole starting area up front, behind the title screen, so there's no pop-in at the start.
+streamer.update(level.start.x, level.start.y);
+streamer.flush();
 const lightPool = createLightPool(scene, level.grid, deriveSeed(seed, 'lights'));
 const panelEmissive = materials.lightOn.emissiveIntensity;
 const truePath = shortestPath(level.grid, level.start, level.exit);
