@@ -7,6 +7,8 @@ export interface AudioFrame {
   whisper: number;
   smilers: readonly { id: number; x: number; z: number }[];
   howler: { x: number; z: number; moving: boolean } | null;
+  /** The nearest air vent, which rumbles ("buzzing vents"). */
+  vent: { x: number; z: number } | null;
   paused: boolean;
 }
 
@@ -29,6 +31,8 @@ export function createAudioEngine(debug: boolean): AudioEngine {
   let master: GainNode;
   let noise: AudioBuffer;
   let humGain: GainNode;
+  let ventGain: GainNode;
+  let ventPanner: PannerNode;
   let whisperGain: GainNode;
   let muted = false;
   let howlerNextStep = 0;
@@ -101,6 +105,24 @@ export function createAudioEngine(debug: boolean): AudioEngine {
     buzzGain.gain.value = 0.15;
     buzz.connect(bp).connect(buzzGain).connect(humGain);
     buzz.start();
+
+    // Air vent: a low, breathy rumble that sits at the nearest vent.
+    ventPanner = panner(0, 0, 1.5, 1.4);
+    ventGain = ctx.createGain();
+    ventGain.gain.value = 0;
+    ventGain.connect(ventPanner).connect(master);
+    const air = noiseSource(true);
+    const airLp = ctx.createBiquadFilter();
+    airLp.type = 'lowpass';
+    airLp.frequency.value = 260;
+    air.connect(airLp).connect(ventGain);
+    air.start();
+    const motor = ctx.createOscillator();
+    motor.frequency.value = 58;
+    const motorGain = ctx.createGain();
+    motorGain.gain.value = 0.25;
+    motor.connect(motorGain).connect(ventGain);
+    motor.start();
 
     // Whispers: two breathy bands, swaying between the ears.
     whisperGain = ctx.createGain();
@@ -178,6 +200,12 @@ export function createAudioEngine(debug: boolean): AudioEngine {
       const quiet = f.paused ? 0.25 : 1;
       humGain.gain.setTargetAtTime(Math.min(1, f.hum * quiet), t, SMOOTH);
       whisperGain.gain.setTargetAtTime(f.paused ? 0 : Math.min(1, f.whisper), t, SMOOTH * 4);
+      if (f.vent) {
+        ventPanner.positionX.setTargetAtTime(f.vent.x, t, SMOOTH);
+        ventPanner.positionZ.setTargetAtTime(f.vent.z, t, SMOOTH);
+        ventPanner.positionY.setTargetAtTime(2.6, t, SMOOTH);
+      }
+      ventGain.gain.setTargetAtTime(f.vent && !f.paused ? 0.35 : 0, t, SMOOTH * 6);
       for (const s of f.smilers) {
         const v = smilerVoice(s.id, s.x, s.z);
         v.panner.positionX.setTargetAtTime(s.x, t, SMOOTH);

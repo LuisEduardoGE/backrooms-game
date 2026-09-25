@@ -41,6 +41,8 @@ import { Cell, CELL_SIZE, cellToWorld, DIR_STEP, getCell, isDark, worldToCell } 
 import { ITEM_COUNTS, type Item, placeItems } from './world/items';
 import { createProps } from './world/props';
 import type { ChunkPanels } from './world/chunkMesh';
+import { CHUNK_CELLS } from './world/chunks';
+import { ceilingDressing } from './world/dressing';
 import { createChunkStreamer } from './world/streamer';
 import { loadWorldMaterials } from './world/textures';
 
@@ -236,6 +238,34 @@ function updatePanels(timeSec: number, blackout: { x: number; z: number; radius:
  * falls back to a plain lock where unsupported. Rejections (e.g. re-locking within ~1 s of Esc)
  * are swallowed — the next click works.
  */
+/** Vents around the player's chunk, refreshed when the player changes chunk. */
+let ventChunk = '';
+let nearbyVents: { x: number; z: number }[] = [];
+function nearestVent(x: number, z: number): { x: number; z: number } | null {
+  const cx = Math.floor(worldToCell(x) / CHUNK_CELLS);
+  const cy = Math.floor(worldToCell(z) / CHUNK_CELLS);
+  const key = `${cx},${cy}`;
+  if (key !== ventChunk) {
+    ventChunk = key;
+    nearbyVents = [];
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        for (const it of ceilingDressing(level.grid, cx + dx, cy + dy, CHUNK_CELLS)) if (it.kind === 'vent') nearbyVents.push({ x: it.x, z: it.z });
+      }
+    }
+  }
+  let best: { x: number; z: number } | null = null;
+  let bestD = 12;
+  for (const v of nearbyVents) {
+    const d = Math.hypot(v.x - x, v.z - z);
+    if (d < bestD) {
+      bestD = d;
+      best = v;
+    }
+  }
+  return best;
+}
+
 function lockPointer(): void {
   const request = canvas.requestPointerLock as (options?: { unadjustedMovement?: boolean }) => Promise<void> | void;
   Promise.resolve(request.call(canvas, { unadjustedMovement: true })).catch(() =>
@@ -495,6 +525,7 @@ renderer.setAnimationLoop((now: number) => {
     whisper: whisperLevel(distortionFromSanity(sanity.value)),
     smilers: entities.filter((e) => e.kind === 'smiler').map((e) => ({ id: e.id, x: e.pos.x, z: e.pos.z })),
     howler: howler ? { x: howler.pos.x, z: howler.pos.z, moving: howler.pos.x !== howler.prevPos.x || howler.pos.z !== howler.prevPos.z } : null,
+    vent: nearestVent(player.pos.x, player.pos.z),
     paused: phase !== 'playing',
     });
   } catch (err) {
