@@ -1,12 +1,41 @@
 import { deriveSeed } from '../core/rng';
 import { Cell, cellToWorld, type Grid, getCell, isDark, type Point, worldToCell } from '../world/grid';
 
+function cellHash(x: number, y: number, salt: number): number {
+  let h = Math.imul(x, 374761393) ^ Math.imul(y, 668265263) ^ Math.imul(salt, 2246822519);
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+
+/** Smooth value noise over cells, 0..1, features about `scale` cells across. */
+function smoothNoise(x: number, y: number, scale: number): number {
+  const fx = x / scale;
+  const fy = y / scale;
+  const ix = Math.floor(fx);
+  const iy = Math.floor(fy);
+  const tx = fx - ix;
+  const ty = fy - iy;
+  const sx = tx * tx * (3 - 2 * tx);
+  const sy = ty * ty * (3 - 2 * ty);
+  const a = cellHash(ix, iy, 7) * (1 - sx) + cellHash(ix + 1, iy, 7) * sx;
+  const b = cellHash(ix, iy + 1, 7) * (1 - sx) + cellHash(ix + 1, iy + 1, 7) * sx;
+  return a * (1 - sy) + b * sy;
+}
+
+/** Panel density from gloomy stretches to well-lit clusters. */
+const DENSITY_MIN = 0.05;
+const DENSITY_MAX = 0.75;
+
 /**
- * A square 2×2 ft fluorescent panel hangs over the centre of every floor cell: a dense 2 m grid,
- * as in Kane Pixels' Level 0.
+ * Level 0's "inconsistently-placed fluorescent lighting": a square 2×2 ft panel over some floor
+ * cells — dense clusters in places, long gloomy gaps in others (smooth noise sets the local
+ * density, a per-cell hash picks the panels). Deterministic from the cell coordinates.
  */
 export function isLightCell(grid: Grid, x: number, y: number): boolean {
-  return getCell(grid, x, y) === Cell.Floor;
+  if (getCell(grid, x, y) !== Cell.Floor) return false;
+  const n = smoothNoise(x, y, 8);
+  const density = DENSITY_MIN + (DENSITY_MAX - DENSITY_MIN) * n * n * (3 - 2 * n);
+  return cellHash(x, y, 1) < density;
 }
 
 /** Lit ceiling lights nearest to a cell centre (ties by y then x). */

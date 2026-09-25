@@ -19,7 +19,7 @@ const SEG = 1;
 /** Rows of shading vertices up a wall: dense near the floor and ceiling where the shadows are. */
 const WALL_ROWS = [0, 0.12, 0.4, 1.2, 2.2, 2.55, WALL_HEIGHT];
 /** Brightness of a dark-zone panel (a dead tube, barely visible). */
-export const PANEL_OFF = 0.06;
+export const PANEL_OFF = 0.01;
 
 /** A square 2×2 ft panel over every lit cell: exactly the ceiling tile at the cell's centre. */
 const trofferGeo = new THREE.PlaneGeometry(CEILING_TILE, CEILING_TILE).rotateX(Math.PI / 2);
