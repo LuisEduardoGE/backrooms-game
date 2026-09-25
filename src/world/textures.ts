@@ -8,6 +8,7 @@ import ceilingNormal from '../assets/textures/OfficeCeiling001/NormalGL.jpg';
 import paperColor from '../assets/textures/Wallpaper001C/Color.jpg';
 import paperRough from '../assets/textures/Wallpaper001C/Roughness.jpg';
 import stainedColor from '../assets/textures/Wallpaper002B/Color.jpg';
+import type { PanelMap } from '../lighting/panelMap';
 import { withPanelLights } from '../lighting/panelLights';
 import { heightToNormal } from './normalMap';
 
@@ -300,7 +301,7 @@ const textures = new THREE.TextureLoader();
  * Loads the photo-scanned CC0 maps (ambientCG) and composites the Level 0 look over them.
  * Baked light and contact shadows arrive as vertex colours on every surface.
  */
-export async function loadWorldMaterials(rng: Rng): Promise<WorldMaterials> {
+export async function loadWorldMaterials(rng: Rng, panels: PanelMap): Promise<WorldMaterials> {
   const [paper, stained, carpetImg, ceilingImg, paperR, carpetN, carpetR, ceilN] = await Promise.all([
     images.loadAsync(paperColor),
     images.loadAsync(stainedColor),
@@ -314,7 +315,7 @@ export async function loadWorldMaterials(rng: Rng): Promise<WorldMaterials> {
   const W = TEXTURE_METRES.wallpaper;
   const paperRoughMap = finish(paperR, W, false);
   // Every surface is lit per pixel by the ceiling panels (see lighting/panelLights.ts).
-  const lit = <T extends THREE.MeshStandardMaterial>(m: T, drop?: number, intensity = PANEL_INTENSITY) => withPanelLights(m, { intensity, drop });
+  const lit = <T extends THREE.MeshStandardMaterial>(m: T, drop?: number, intensity = PANEL_INTENSITY) => withPanelLights(m, { intensity, drop, panels });
   const normals = { chevron: finish(wallpaperNormal(paper, 'chevron'), W, false), dots: finish(wallpaperNormal(paper, 'dots'), W, false) };
   const wallMat = (img: HTMLImageElement, wash: number, print: Print) =>
     lit(
@@ -334,7 +335,7 @@ export async function loadWorldMaterials(rng: Rng): Promise<WorldMaterials> {
     wallDots: wallMat(paper, 0.6, 'dots'),
     wallStained: wallMat(stained, 0.4, 'chevron'),
     rail: lit(new THREE.MeshStandardMaterial({ color: 0x6f5535, roughness: 0.6, vertexColors: true })),
-    tbar: lit(new THREE.MeshStandardMaterial({ color: new THREE.Color(0.95, 0.9, 0.72), roughness: 0.7, vertexColors: true, side: THREE.DoubleSide }), 1.1, CEILING_PANEL_INTENSITY),
+    tbar: lit(new THREE.MeshStandardMaterial({ color: new THREE.Color(0.6, 0.57, 0.45), roughness: 0.7, vertexColors: true, side: THREE.DoubleSide }), 1.1, CEILING_PANEL_INTENSITY),
     floor: lit(new THREE.MeshStandardMaterial({
       map: finish(new THREE.CanvasTexture(carpet(carpetImg, rng)), TEXTURE_METRES.carpet, true),
       normalMap: finish(carpetN, TEXTURE_METRES.carpet, false),
@@ -351,7 +352,7 @@ export async function loadWorldMaterials(rng: Rng): Promise<WorldMaterials> {
       roughness: 1,
       // Lifted a little (little fill reaches it from above), but kept below the walls between the
       // lights, as in Kane Pixels' footage.
-      color: new THREE.Color(0.5, 0.5, 0.48),
+      color: new THREE.Color(0.62, 0.62, 0.58),
       vertexColors: true,
     }), 1.1, CEILING_PANEL_INTENSITY),
     troffer: new THREE.MeshBasicMaterial({

@@ -6,46 +6,63 @@ import {
 import { Cell, createGrid, setCell } from '../../src/world/grid';
 
 describe('isLightCell', () => {
-  const g = createGrid(8, 8);
-  for (let y = 1; y < 7; y++) for (let x = 1; x < 7; x++) setCell(g, x, y, Cell.Floor);
-  setCell(g, 4, 4, Cell.Pillar);
+  /** A big open floor, to look at the placement statistically. */
+  const big = createGrid(120, 120);
+  for (let y = 1; y < 119; y++) for (let x = 1; x < 119; x++) setCell(big, x, y, Cell.Floor);
 
-  it('hangs a panel over every floor cell (dense 2 m grid, Kane Pixels style)', () => {
-    expect(isLightCell(g, 2, 2)).toBe(true);
-    expect(isLightCell(g, 3, 2)).toBe(true);
-    expect(isLightCell(g, 5, 6)).toBe(true);
-  });
-
-  it('skips walls and pillars', () => {
+  it('never puts a panel over a wall or a pillar', () => {
+    const g = createGrid(8, 8);
+    for (let y = 1; y < 7; y++) for (let x = 1; x < 7; x++) setCell(g, x, y, Cell.Floor);
+    setCell(g, 4, 4, Cell.Pillar);
     expect(isLightCell(g, 0, 0)).toBe(false);
     expect(isLightCell(g, 4, 4)).toBe(false);
+  });
+
+  it('is sparse: "inconsistently-placed" panels over roughly a third of the floor', () => {
+    let lit = 0;
+    for (let y = 1; y < 119; y++) for (let x = 1; x < 119; x++) if (isLightCell(big, x, y)) lit++;
+    const frac = lit / (118 * 118);
+    expect(frac).toBeGreaterThan(0.2);
+    expect(frac).toBeLessThan(0.45);
+  });
+
+  it('clusters: some 10×10 areas are well lit and others gloomy (not a uniform sprinkle)', () => {
+    const fracs: number[] = [];
+    for (let by = 0; by < 11; by++) {
+      for (let bx = 0; bx < 11; bx++) {
+        let lit = 0;
+        for (let y = 1 + by * 10; y < 11 + by * 10; y++) for (let x = 1 + bx * 10; x < 11 + bx * 10; x++) if (isLightCell(big, x, y)) lit++;
+        fracs.push(lit / 100);
+      }
+    }
+    expect(Math.max(...fracs)).toBeGreaterThan(0.5);
+    expect(Math.min(...fracs)).toBeLessThan(0.15);
   });
 });
 
 describe('nearestLitLights', () => {
-  const g = createGrid(20, 20);
-  for (let y = 1; y < 19; y++) for (let x = 1; x < 19; x++) setCell(g, x, y, Cell.Floor);
+  const g = createGrid(40, 40);
+  for (let y = 1; y < 39; y++) for (let x = 1; x < 39; x++) setCell(g, x, y, Cell.Floor);
+  const d = (p: { x: number; y: number }) => Math.hypot(p.x - 19, p.y - 19);
 
-  it('returns the closest light cells, ties ordered by y then x', () => {
-    expect(nearestLitLights(g, 9, 9, 5)).toEqual([
-      { x: 9, y: 9 },
-      { x: 9, y: 8 },
-      { x: 8, y: 9 },
-      { x: 10, y: 9 },
-      { x: 9, y: 10 },
-    ]);
+  it('returns lit panels only, nearest first', () => {
+    const found = nearestLitLights(g, 19, 19, 6, 12);
+    expect(found.length).toBeGreaterThan(0);
+    for (const p of found) expect(isLightCell(g, p.x, p.y)).toBe(true);
+    for (let i = 1; i < found.length; i++) expect(d(found[i])).toBeGreaterThanOrEqual(d(found[i - 1]));
   });
 
   it('skips lights in dark zones', () => {
-    const dark = createGrid(20, 20);
-    for (let y = 1; y < 19; y++) for (let x = 1; x < 19; x++) setCell(dark, x, y, Cell.Floor);
-    dark.dark[9 * 20 + 9] = 1;
-    expect(nearestLitLights(dark, 9, 9, 4)).not.toContainEqual({ x: 9, y: 9 });
+    const dark = createGrid(40, 40);
+    for (let y = 1; y < 39; y++) for (let x = 1; x < 39; x++) setCell(dark, x, y, Cell.Floor);
+    const first = nearestLitLights(dark, 19, 19, 1, 12)[0];
+    dark.dark[first.y * 40 + first.x] = 1;
+    expect(nearestLitLights(dark, 19, 19, 4, 12)).not.toContainEqual(first);
   });
 
   it('respects the count and radius limits', () => {
-    expect(nearestLitLights(g, 9, 9, 2)).toHaveLength(2);
-    expect(nearestLitLights(g, 9, 9, 50, 1)).toHaveLength(9);
+    expect(nearestLitLights(g, 19, 19, 2, 12)).toHaveLength(2);
+    for (const p of nearestLitLights(g, 19, 19, 50, 3)) expect(Math.max(Math.abs(p.x - 19), Math.abs(p.y - 19))).toBeLessThanOrEqual(3);
   });
 });
 
@@ -106,12 +123,13 @@ describe('lightFalloff', () => {
 });
 
 describe('nearestLitLightsAt', () => {
-  const g = createGrid(20, 20);
-  for (let y = 1; y < 19; y++) for (let x = 1; x < 19; x++) setCell(g, x, y, Cell.Floor);
+  const g = createGrid(40, 40);
+  for (let y = 1; y < 39; y++) for (let x = 1; x < 39; x++) setCell(g, x, y, Cell.Floor);
 
   it('ranks fixtures by exact world distance', () => {
-    // Near the right edge of cell 7: its own panel (x=15 m) is 0.9 m away, cell 8's (x=17 m) 1.1 m.
-    expect(nearestLitLightsAt(g, 15.9, 17, 2)).toEqual([{ x: 7, y: 8 }, { x: 8, y: 8 }]);
+    const [a, b] = nearestLitLightsAt(g, 38.9, 37.3, 2, 12);
+    const dist = (p: { x: number; y: number }) => Math.hypot((p.x + 0.5) * 2 - 38.9, (p.y + 0.5) * 2 - 37.3);
+    expect(dist(a)).toBeLessThanOrEqual(dist(b));
   });
 });
 

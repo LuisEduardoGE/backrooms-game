@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { AMBIENT_DARK, createLightField } from '../../src/lighting/bake';
 import { AO_MIN, contactShadow, lightAt } from '../../src/lighting/sample';
 import { WALL_THICKNESS } from '../../src/world/solids';
-import { Cell, cellToWorld, createGrid, setCell } from '../../src/world/grid';
+import { Cell, cellToWorld, createGrid, getCell, setCell } from '../../src/world/grid';
 
 /** 11×11 open room (floor 1..9) with an outer wall ring. */
 function room() {
@@ -40,7 +40,8 @@ describe('lightAt across walls', () => {
 
   it('never lets light bleed through a wall: each face gets its own room light', () => {
     const g = split();
-    const light = createLightField(g);
+    // A panel over every floor cell, so only the wall decides the difference.
+    const light = createLightField(g, (gg, x, y) => getCell(gg, x, y) === Cell.Floor);
     const face = WALL_THICKNESS / 2 + 0.06;
     const litSide = lightAt(g, light, cellToWorld(11) - face, cellToWorld(10));
     const darkSide = lightAt(g, light, cellToWorld(11) + face, cellToWorld(10));

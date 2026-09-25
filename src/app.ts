@@ -21,6 +21,7 @@ import {
 import { spawnHowlerCell, spawnSmilerCells } from './game/spawns';
 import { AMBIENT_DARK, createLightField } from './lighting/bake';
 import { flicker, isFaultyLight, lightFalloff, nearestLitLightsAt, panelLevel, sceneExposure } from './lighting/lights';
+import { createPanelMap } from './lighting/panelMap';
 import { lightAt } from './lighting/sample';
 import { addBattery, createCamcorder, toggleNightVision, updateCamcorder } from './player/camcorder';
 import { applyLook, createPlayer, headBob, NO_INPUT, updatePlayer } from './player/controller';
@@ -88,7 +89,8 @@ scene.add(irLight);
 const params = parseParams(window.location.search);
 const seed = params.seed ?? Math.floor(Math.random() * 0xffffffff) >>> 0;
 const level = generateLevel(seed);
-const materials = await loadWorldMaterials(createRng(deriveSeed(seed, 'textures')));
+const panelMap = createPanelMap(level.grid);
+const materials = await loadWorldMaterials(createRng(deriveSeed(seed, 'textures')), panelMap);
 const lightField = createLightField(level.grid);
 /** Baked light at a world point — props, the Howler and the IR light are matched to it. */
 const shade = (x: number, z: number) => lightAt(level.grid, lightField, x, z);
@@ -135,7 +137,7 @@ let endRevealed = false;
 const player = createPlayer({ x: cellToWorld(level.start.x), z: cellToWorld(level.start.y) }, level.startYaw);
 const debugHud = params.debug ? createDebugHud(level) : null;
 // ?debug only: a console handle for inspecting a scene (e.g. teleport: __backrooms.player.pos.x = …).
-if (params.debug) Object.assign(window, { __backrooms: { player, level, camera, materials } });
+if (params.debug) Object.assign(window, { __backrooms: { player, level, camera, materials, scene } });
 if (params.debug) console.info(`[backrooms] seed ${seed} — reload with ?debug&seed=${seed} to replay`);
 
 const camcorder = createCamcorder();
@@ -173,7 +175,10 @@ function updatePanels(timeSec: number, blackout: { x: number; z: number; radius:
   const write = (p: ChunkPanels, i: number) => {
     const c = p.cells[i];
     const out = blackout !== null && Math.hypot(c.wx - blackout.x, c.wz - blackout.z) <= blackout.radius;
-    p.mesh.setColorAt(i, panelColor.setScalar(panelLevel(p.base[i], timeSec, c.y * level.grid.width + c.x, lightSeed, out, dim)));
+    const lvl = panelLevel(p.base[i], timeSec, c.y * level.grid.width + c.x, lightSeed, out, dim);
+    p.mesh.setColorAt(i, panelColor.setScalar(lvl));
+    // The room's direct light follows the tube (a dead dark-zone panel gives none).
+    panelMap.set(c.x, c.y, p.base[i] < 1 ? 0 : lvl);
   };
   for (const p of streamer.panels()) {
     let cache = panelCache.get(p);
@@ -198,6 +203,7 @@ function updatePanels(timeSec: number, blackout: { x: number; z: number; radius:
       if (fall > 0) nearest = Math.min(nearest, 1 - (1 - flicker(timeSec, c.y * level.grid.width + c.x, lightSeed)) * fall);
     }
   }
+  panelMap.commit();
   return sceneExposure(blackout !== null, dim, nearest);
 }
 
