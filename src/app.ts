@@ -20,8 +20,7 @@ import {
 } from './game/sanity';
 import { spawnHowlerCell, spawnSmilerCells } from './game/spawns';
 import { createLightField } from './lighting/bake';
-import { createLightPool } from './lighting/lightPool';
-import { nearestLitLightsAt, panelGlow } from './lighting/lights';
+import { flicker, lightFalloff, nearestLitLightsAt, panelLevel, sceneExposure } from './lighting/lights';
 import { addBattery, createCamcorder, toggleNightVision, updateCamcorder } from './player/camcorder';
 import { applyLook, createPlayer, headBob, NO_INPUT, updatePlayer } from './player/controller';
 import { createDebugHud } from './ui/debugHud';
@@ -38,7 +37,7 @@ import { Cell, CELL_SIZE, cellToWorld, DIR_STEP, getCell, isDark, worldToCell } 
 import { ITEM_COUNTS, type Item, placeItems } from './world/items';
 import { createProps } from './world/props';
 import { createChunkStreamer } from './world/streamer';
-import { createWorldMaterials } from './world/textures';
+import { loadWorldMaterials } from './world/textures';
 
 /** A warm, pale haze: Level 0 fades into yellow, not into darkness. */
 const FOG_COLOR = 0x8a7c4a;
@@ -61,12 +60,20 @@ const renderer = new THREE.WebGLRenderer({ canvas, powerPreference: 'high-perfor
 const MAX_PIXEL_RATIO = 1.5;
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO));
 renderer.setSize(window.innerWidth, window.innerHeight);
+// AgX: soft filmic highlight roll-off, so bright panels and walls bloom into haze instead of clipping.
+renderer.toneMapping = THREE.AgXToneMapping;
+const EXPOSURE = 1.0;
+renderer.toneMappingExposure = EXPOSURE;
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(FOG_COLOR);
 scene.fog = new THREE.FogExp2(FOG_COLOR, 0.028);
 // Even fluorescent fill; per-area brightness (and darkness in dead zones) is baked into the meshes.
-scene.add(new THREE.HemisphereLight(0xfff6d8, 0xc8b47a, 1.6));
+scene.add(new THREE.HemisphereLight(0xfff6d8, 0xc8b47a, 1.25));
+// Straight down from the ceiling grid: grazes the walls so the paper and carpet normal maps read.
+const keyLight = new THREE.DirectionalLight(0xfff2d0, 0.9);
+keyLight.position.set(0.15, 1, 0.1);
+scene.add(keyLight);
 
 const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.05, 120);
 camera.rotation.order = 'YXZ';
@@ -77,14 +84,13 @@ scene.add(irLight);
 const params = parseParams(window.location.search);
 const seed = params.seed ?? Math.floor(Math.random() * 0xffffffff) >>> 0;
 const level = generateLevel(seed);
-const materials = createWorldMaterials(createRng(deriveSeed(seed, 'textures')));
+const materials = await loadWorldMaterials(createRng(deriveSeed(seed, 'textures')));
 const lightField = createLightField(level.grid);
 const streamer = createChunkStreamer(scene, level.grid, materials, lightField);
 // Build the whole starting area up front, behind the title screen, so there's no pop-in at the start.
 streamer.update(level.start.x, level.start.y);
 streamer.flush();
-const lightPool = createLightPool(scene, level.grid, deriveSeed(seed, 'lights'));
-const panelEmissive = materials.lightOn.emissiveIntensity;
+const lightSeed = deriveSeed(seed, 'lights');
 const truePath = shortestPath(level.grid, level.start, level.exit);
 const arrows = placeArrows(level.grid, truePath, createRng(deriveSeed(seed, 'clues')));
 const items = placeItems(level, truePath, createRng(deriveSeed(seed, 'items')));
@@ -149,6 +155,33 @@ let sensitivity = (() => {
  * falls back to a plain lock where unsupported. Rejections (e.g. re-locking within ~1 s of Esc)
  * are swallowed — the next click works.
  */
+const panelColor = new THREE.Color();
+/**
+ * Flicker, the Howler's warning and Presence blackouts act on individual ceiling panels (instance
+ * colours) and on the camera exposure — the baked room light itself never changes.
+ */
+function updatePanels(timeSec: number, blackout: { x: number; z: number; radius: number } | null, dim: boolean): void {
+  let nearest = 1;
+  let nearestD = Infinity;
+  for (const p of streamer.panels()) {
+    for (let i = 0; i < p.cells.length; i++) {
+      const c = p.cells[i];
+      const id = c.y * level.grid.width + c.x;
+      const out = blackout !== null && Math.hypot(c.wx - blackout.x, c.wz - blackout.z) <= blackout.radius;
+      p.mesh.setColorAt(i, panelColor.setScalar(panelLevel(p.base[i], timeSec, id, lightSeed, out, dim)));
+      if (p.base[i] < 1) continue;
+      const d = Math.hypot(c.wx - player.pos.x, c.wz - player.pos.z);
+      if (d < nearestD) {
+        nearestD = d;
+        // A flickering tube only darkens the view when it's the one right above you.
+        nearest = 1 - (1 - flicker(timeSec, id, lightSeed)) * lightFalloff(d);
+      }
+    }
+    if (p.mesh.instanceColor) p.mesh.instanceColor.needsUpdate = true;
+  }
+  renderer.toneMappingExposure = EXPOSURE * sceneExposure(blackout !== null, dim, nearest);
+}
+
 function lockPointer(): void {
   const request = canvas.requestPointerLock as (options?: { unadjustedMovement?: boolean }) => Promise<void> | void;
   Promise.resolve(request.call(canvas, { unadjustedMovement: true })).catch(() =>
@@ -374,8 +407,7 @@ renderer.setAnimationLoop((now: number) => {
   // Presence/warning timers run on the tape clock, so they don't expire while paused.
   const gameMs = recordedSec * 1000;
   const activeBlackout = blackout && gameMs < blackout.until ? { x: blackout.x, z: blackout.z, radius: BLACKOUT_RADIUS } : null;
-  lightPool.update(camera.position.x, camera.position.z, now / 1000, activeBlackout, gameMs < dimUntil);
-  materials.lightOn.emissiveIntensity = panelEmissive * panelGlow(activeBlackout !== null, gameMs < dimUntil);
+  updatePanels(now / 1000, activeBlackout, gameMs < dimUntil);
   props.update(now / 1000);
   entityViews.sync(entities, a, frameDt, phase === 'playing');
   irLight.position.copy(camera.position);

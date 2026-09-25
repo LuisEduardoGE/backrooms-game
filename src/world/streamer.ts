@@ -1,5 +1,5 @@
 import type * as THREE from 'three';
-import { buildChunk, disposeChunk, type LightField } from './chunkMesh';
+import { buildChunk, type ChunkPanels, disposeChunk, type LightField } from './chunkMesh';
 import { type ChunkKey, chunkKey, chunkOf, chunksAround, LOAD_RADIUS, parseChunkKey, planChunkWork } from './chunks';
 import type { Grid } from './grid';
 import type { WorldMaterials } from './textures';
@@ -48,5 +48,9 @@ export function createChunkStreamer(scene: THREE.Scene, grid: Grid, mats: WorldM
       queue = [];
     },
     loadedCount: () => loaded.size,
+    /** Ceiling panels of every loaded chunk (for flicker and blackouts). */
+    *panels(): Iterable<ChunkPanels> {
+      for (const group of loaded.values()) if (group.userData.panels) yield group.userData.panels as ChunkPanels;
+    },
   };
 }

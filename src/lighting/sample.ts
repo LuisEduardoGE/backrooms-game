@@ -61,7 +61,16 @@ export function contactShadow(grid: Grid, wx: number, wz: number): number {
   const cx = worldToCell(wx);
   const cz = worldToCell(wz);
   const rects: Rect[] = [];
-  for (let y = cz - 1; y <= cz + 1; y++) for (let x = cx - 1; x <= cx + 1; x++) rects.push(...solidRects(grid, x, y));
+  for (let y = cz - 1; y <= cz + 1; y++) {
+    for (let x = cx - 1; x <= cx + 1; x++) {
+      for (const r of solidRects(grid, x, y)) {
+        // Only solids within reach can occlude (most floor points are in the open: no rays at all).
+        const dx = Math.max(r.minX - wx, 0, wx - r.maxX);
+        const dz = Math.max(r.minZ - wz, 0, wz - r.maxZ);
+        if (dx * dx + dz * dz < AO_RADIUS * AO_RADIUS) rects.push(r);
+      }
+    }
+  }
   if (rects.length === 0) return 1;
   let occ = 0;
   for (const [dx, dz] of DIRS) {
