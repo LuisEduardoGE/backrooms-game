@@ -44,7 +44,7 @@ execFileSync(
     `${FRAMES}/f%03d.png`,
     '-vf',
     // Denoise first: per-frame VHS grain defeats GIF compression.
-    'hqdn3d=6:4:8:6,scale=480:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=48:stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle',
+    'hqdn3d=3:2:4:3,scale=480:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=96:stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle',
     'public/trailer.gif',
   ],
   { stdio: 'inherit' },

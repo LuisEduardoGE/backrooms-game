@@ -67,7 +67,7 @@ renderer.toneMappingExposure = EXPOSURE;
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(FOG_COLOR);
-scene.fog = new THREE.FogExp2(FOG_COLOR, 0.028);
+scene.fog = new THREE.FogExp2(FOG_COLOR, 0.022);
 // Even fluorescent fill; per-area brightness (and darkness in dead zones) is baked into the meshes.
 scene.add(new THREE.HemisphereLight(0xfff6d8, 0xc8b47a, 1.25));
 // Straight down from the ceiling grid: grazes the walls so the paper and carpet normal maps read.

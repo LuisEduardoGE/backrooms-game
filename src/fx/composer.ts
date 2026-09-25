@@ -38,7 +38,7 @@ export function createVhsComposer(
   gtao.updateGtaoMaterial({ radius: 0.6, distanceExponent: 1.5, thickness: 1, scale: 1.2, samples: 12 });
   gtao.blendIntensity = 0.7;
   composer.addPass(gtao);
-  const bloom = new UnrealBloomPass(new THREE.Vector2(width / 2, height / 2), 0.35, 0.6, 0.92);
+  const bloom = new UnrealBloomPass(new THREE.Vector2(width / 2, height / 2), 0.22, 0.3, 0.95);
   composer.addPass(bloom);
   composer.addPass(new OutputPass());
   const vhs = new ShaderPass(VhsShader);
