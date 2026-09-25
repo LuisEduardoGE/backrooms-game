@@ -99,7 +99,7 @@ const lightSeed = deriveSeed(seed, 'lights');
 const truePath = shortestPath(level.grid, level.start, level.exit);
 const arrows = placeArrows(level.grid, truePath, createRng(deriveSeed(seed, 'clues')));
 const items = placeItems(level, truePath, createRng(deriveSeed(seed, 'items')));
-const props = createProps(scene, level, arrows, items, materials.wall.map, shade);
+const props = createProps(scene, level, arrows, items, materials.wall, shade);
 const taken = new Set<number>();
 let notesFound = 0;
 const sanity = createSanity();
@@ -133,6 +133,8 @@ let endedAt: number | null = null;
 let endRevealed = false;
 const player = createPlayer({ x: cellToWorld(level.start.x), z: cellToWorld(level.start.y) }, level.startYaw);
 const debugHud = params.debug ? createDebugHud(level) : null;
+// ?debug only: a console handle for inspecting a scene (e.g. teleport: __backrooms.player.pos.x = …).
+if (params.debug) Object.assign(window, { __backrooms: { player, level, camera } });
 if (params.debug) console.info(`[backrooms] seed ${seed} — reload with ?debug&seed=${seed} to replay`);
 
 const camcorder = createCamcorder();

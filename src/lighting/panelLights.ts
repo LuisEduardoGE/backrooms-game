@@ -52,7 +52,10 @@ export function withPanelLights<T extends THREE.MeshStandardMaterial>(mat: T, o:
               IncidentLight panel;
               panel.direction = lv / d;
               // Windowed inverse-square: physically shaped near the panel, smoothly zero at RANGE.
-              panel.color = vec3(1.0, 0.96, 0.86) * uPanelIntensity * w * w / (1.0 + d * d);
+              // A troffer is a flat, downward-facing emitter (Lambertian): it barely lights a wall
+              // beside it at its own height — no hot spots under the lamps.
+              float facing = ${o.drop === undefined ? 'saturate((lp.y - vPanelWorld.y) / max(distance(lp, vPanelWorld), 1e-3))' : '1.0'};
+              panel.color = vec3(1.0, 0.96, 0.86) * uPanelIntensity * facing * w * w / (1.0 + d * d);
               panel.visible = true;
               RE_Direct(panel, geometryPosition, geometryNormal, geometryViewDir, geometryClearcoatNormal, material, reflectedLight);
             }

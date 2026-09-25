@@ -4,7 +4,7 @@ import type { Level } from './generator';
 import { CELL_SIZE, cellToWorld, type Dir, DIR_STEP, WALL_HEIGHT } from './grid';
 import type { Item } from './items';
 import { WALL_FACE_DISTANCE } from './solids';
-import { TEXTURE_METRES } from './textures';
+import { wallHeightShade } from './chunkMesh';
 
 /** Y-rotation that turns a +Z-facing plane to face out of the given wall into the cell. */
 const FACE_ROTATION: Record<Dir, number> = { N: 0, S: Math.PI, W: Math.PI / 2, E: -Math.PI / 2 };
@@ -65,48 +65,40 @@ function paperTexture(): THREE.CanvasTexture {
   });
 }
 
-/** Wallpaper with rows shearing and sparking — the noclip wall. `uMap` is assigned by the caller. */
-function noclipMaterial(): THREE.ShaderMaterial {
-  return new THREE.ShaderMaterial({
-    fog: true,
-    uniforms: THREE.UniformsUtils.merge([
-      THREE.UniformsLib.fog,
-      { uTime: { value: 0 }, uMap: { value: null }, uScale: { value: new THREE.Vector2(1, 1) }, uOffset: { value: 0 }, uLight: { value: 1 } },
-    ]),
-    vertexShader: /* glsl */ `
-      #include <fog_pars_vertex>
-      varying vec2 vUv;
-      void main() {
-        vUv = uv;
-        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-        gl_Position = projectionMatrix * mvPosition;
-        #include <fog_vertex>
-      }
-    `,
-    fragmentShader: /* glsl */ `
-      #include <fog_pars_fragment>
-      uniform float uTime;
-      uniform sampler2D uMap;
-      uniform vec2 uScale;
-      uniform float uOffset;
-      uniform float uLight;
-      varying vec2 vUv;
-      float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
-      void main() {
-        float t = fract(uTime / 100.0) * 100.0;
-        float row = floor(vUv.y * 40.0);
-        float shear = (hash(vec2(row, floor(t * 6.0))) - 0.5) * 0.12;
-        // Same world-metre mapping as the walls around it, so the exit is not a visual tell.
-        vec2 wallUv = (vUv * uScale + vec2(uOffset, 0.0)) / ${TEXTURE_METRES.wallpaper.toFixed(4)};
-        vec3 c = texture2D(uMap, wallUv + vec2(shear, 0.0)).rgb * uLight * 0.85;
-        float spark = step(0.985, hash(floor(vUv * vec2(60.0, 80.0)) + floor(t * 8.0)));
-        c = mix(c, vec3(1.0), spark * 0.7);
-        gl_FragColor = vec4(c, 1.0);
-        #include <colorspace_fragment>
-        #include <fog_fragment>
-      }
-    `,
-  });
+/**
+ * The noclip wall: the very same lit, embossed wallpaper as every other wall (so it is not a flat
+ * tell from across the room), but up close its rows shear and it sparks now and then.
+ */
+function noclipMaterial(wall: THREE.MeshStandardMaterial, time: { value: number }): THREE.MeshStandardMaterial {
+  const mat = wall.clone();
+  mat.polygonOffset = true;
+  mat.polygonOffsetFactor = -1;
+  const lit = wall.onBeforeCompile.bind(wall);
+  mat.onBeforeCompile = (shader, renderer) => {
+    lit(shader, renderer);
+    shader.uniforms.uTime = time;
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        '#include <common>',
+        '#include <common>\nuniform float uTime;\nfloat noclipHash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }',
+      )
+      .replace(
+        '#include <map_fragment>',
+        /* glsl */ `
+        float nt = fract(uTime / 100.0) * 100.0;
+        float nrow = floor(vMapUv.y * 40.0);
+        // Most of the time only a few rows slip; now and then the whole wall tears.
+        float burst = step(0.8, noclipHash(vec2(floor(nt * 1.5), 7.0)));
+        float slip = step(0.85 - burst * 0.5, noclipHash(vec2(nrow, floor(nt * 6.0))));
+        vec2 shearUv = vMapUv + vec2((noclipHash(vec2(nrow, floor(nt * 6.0) + 1.0)) - 0.5) * 0.08 * slip, 0.0);
+        vec4 sampledDiffuseColor = texture2D(map, shearUv);
+        diffuseColor *= sampledDiffuseColor;
+        float spark = step(0.996 - burst * 0.01, noclipHash(floor(vMapUv * vec2(60.0, 80.0)) + floor(nt * 8.0)));
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(1.6), spark * 0.6);`,
+      );
+  };
+  mat.customProgramCacheKey = () => `noclip:${wall.customProgramCacheKey()}`;
+  return mat;
 }
 
 /** Position on the face of `side` wall of `cell`, pulled `offset` metres into the cell. */
@@ -124,7 +116,7 @@ export function createProps(
   level: Level,
   arrows: readonly Arrow[],
   items: readonly Item[],
-  wallMap: THREE.Texture | null,
+  wallMat: THREE.MeshStandardMaterial,
   /** Baked light at a world point; props sit in the same light as the surfaces around them. */
   shade: (x: number, z: number) => number = () => 1,
 ) {
@@ -201,25 +193,34 @@ export function createProps(
     itemMeshes.set(item.id, obj);
   }
 
-  // The noclip wall.
-  const noclip = noclipMaterial();
-  // Assigned after creation: UniformsUtils.merge would otherwise clone the texture.
-  noclip.uniforms.uMap.value = wallMap;
-  const exitWall = new THREE.Mesh(new THREE.PlaneGeometry(CELL_SIZE, WALL_HEIGHT), noclip);
-  exitWall.position.copy(wallFacePosition(level.exit, level.exitSide, 0.02, WALL_HEIGHT / 2));
-  exitWall.rotation.y = FACE_ROTATION[level.exitSide];
-  noclip.uniforms.uScale.value.set(CELL_SIZE, WALL_HEIGHT);
-  // u of the plane's left edge in the walls' world-metre mapping (see wallFaces toQuad).
+  // The noclip wall: a wall-sized quad just in front of the real face, UVs in the walls' world-metre
+  // mapping and vertex colours from the baked light, so it matches the wall it replaces.
+  const time = { value: 0 };
+  const noclip = noclipMaterial(wallMat, time);
   const n = DIR_STEP[level.exitSide];
   const [nx, nz] = [-n.x, -n.y]; // the face looks back into the cell
+  const exitGeo = new THREE.PlaneGeometry(CELL_SIZE, WALL_HEIGHT, 4, 8);
+  const exitWall = new THREE.Mesh(exitGeo, noclip);
+  // Behind the baseboard's front (1.5 cm proud), in front of the wallpaper.
+  exitWall.position.copy(wallFacePosition(level.exit, level.exitSide, 0.005, WALL_HEIGHT / 2));
+  exitWall.rotation.y = FACE_ROTATION[level.exitSide];
   const left = exitWall.position.clone().addScaledVector(new THREE.Vector3(nz, 0, -nx), -CELL_SIZE / 2);
-  noclip.uniforms.uOffset.value = left.x * nz - left.z * nx;
-  noclip.uniforms.uLight.value = shade(exitWall.position.x - n.x * 0.1, exitWall.position.z - n.y * 0.1);
+  const u0 = left.x * nz - left.z * nx;
+  const light = shade(exitWall.position.x + nx * 0.1, exitWall.position.z + nz * 0.1);
+  const uv = exitGeo.getAttribute('uv');
+  const pos = exitGeo.getAttribute('position');
+  const colors = new Float32Array(pos.count * 3);
+  for (let i = 0; i < pos.count; i++) {
+    const y = pos.getY(i) + WALL_HEIGHT / 2;
+    uv.setXY(i, u0 + uv.getX(i) * CELL_SIZE, y);
+    colors.fill(light * wallHeightShade(y), i * 3, i * 3 + 3);
+  }
+  exitGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
   group.add(exitWall);
 
   return {
     update(timeSec: number): void {
-      noclip.uniforms.uTime.value = timeSec;
+      time.value = timeSec;
     },
     hideItem(id: number): void {
       const obj = itemMeshes.get(id);
