@@ -116,12 +116,15 @@ function wallColumn(grid: Grid, light: LightField, q: WallQuad, t: number): [num
   return [lightAt(grid, light, x, z), Math.min(1, contactShadow(grid, x, z) / 0.8)];
 }
 
+/** Darkening where a wall meets the floor and the ceiling (shared with the noclip exit wall). */
+export function wallHeightShade(y: number): number {
+  return (1 - 0.28 * Math.exp(-y / 0.22)) * (1 - 0.18 * Math.exp(-(WALL_HEIGHT - y) / 0.25));
+}
+
 function wallShade([light, corner]: [number, number], y: number): number {
   // Corner shadow is strongest near the floor.
   const cornerAO = 1 - (1 - corner) * (0.55 + 0.45 * Math.exp(-y / 0.6));
-  const floorAO = 1 - 0.28 * Math.exp(-y / 0.22);
-  const ceilAO = 1 - 0.18 * Math.exp(-(WALL_HEIGHT - y) / 0.25);
-  return light * cornerAO * floorAO * ceilAO;
+  return light * cornerAO * wallHeightShade(y);
 }
 
 /** Stained wallpaper on roughly one wall run in five (deterministic by position). */
