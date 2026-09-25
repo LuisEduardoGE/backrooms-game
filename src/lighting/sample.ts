@@ -1,23 +1,50 @@
-import { CELL_SIZE, type Grid, worldToCell } from '../world/grid';
-import { type Rect, solidRects } from '../world/solids';
+import { Cell, CELL_SIZE, cellToWorld, type Grid, getCell, worldToCell } from '../world/grid';
+import { type Rect, rayBox, solidRects, wallBetween } from '../world/solids';
 
 /** Per-cell baked light, 0..1 (see bake.ts createLightField). */
 export type LightField = (x: number, y: number) => number;
 
 /**
- * Baked light at a world point: bilinear between the four nearest cell centres, so shading
- * never steps at a cell border.
+ * Baked light at a world point: bilinear between the four nearest cell centres, so shading never
+ * steps at a cell border — but only over cells on the same side of any wall. Wall cells (whose
+ * centre sits inside the slab and sees both rooms) and cells behind a slab are dropped and the
+ * remaining weights renormalised, so light never bleeds through a wall into a dark room.
  */
-export function lightAt(light: LightField, wx: number, wz: number): number {
+export function lightAt(grid: Grid, light: LightField, wx: number, wz: number): number {
   const gx = wx / CELL_SIZE - 0.5;
   const gz = wz / CELL_SIZE - 0.5;
   const x = Math.floor(gx);
   const z = Math.floor(gz);
   const fx = gx - x;
   const fz = gz - z;
-  const top = light(x, z) * (1 - fx) + light(x + 1, z) * fx;
-  const bottom = light(x, z + 1) * (1 - fx) + light(x + 1, z + 1) * fx;
-  return top * (1 - fz) + bottom * fz;
+  let sum = 0;
+  let weight = 0;
+  for (let j = 0; j <= 1; j++) {
+    for (let i = 0; i <= 1; i++) {
+      const w = (i ? fx : 1 - fx) * (j ? fz : 1 - fz);
+      if (w <= 0 || !visibleCell(grid, wx, wz, x + i, z + j)) continue;
+      sum += w * light(x + i, z + j);
+      weight += w;
+    }
+  }
+  if (weight > 1e-6) return sum / weight;
+  // Every corner is behind a wall (e.g. a nook): use the nearest visible open cell around.
+  let best = Infinity;
+  let value = light(worldToCell(wx), worldToCell(wz));
+  for (let y = z - 1; y <= z + 2; y++) {
+    for (let cx = x - 1; cx <= x + 2; cx++) {
+      const d = (cellToWorld(cx) - wx) ** 2 + (cellToWorld(y) - wz) ** 2;
+      if (d < best && visibleCell(grid, wx, wz, cx, y)) {
+        best = d;
+        value = light(cx, y);
+      }
+    }
+  }
+  return value;
+}
+
+function visibleCell(grid: Grid, wx: number, wz: number, cx: number, cz: number): boolean {
+  return getCell(grid, cx, cz) !== Cell.Wall && !wallBetween(grid, wx, wz, cellToWorld(cx), cellToWorld(cz));
 }
 
 /** Contact shadow reaches this far (metres) from a wall or column. */
@@ -29,28 +56,6 @@ const DIRS = Array.from({ length: RAYS }, (_, i) => {
   const a = ((i + 0.5) / RAYS) * Math.PI * 2;
   return [Math.cos(a), Math.sin(a)] as const;
 });
-
-/** Distance along a ray to a box (slab method), or Infinity when it misses. */
-function rayBox(ox: number, oz: number, dx: number, dz: number, r: Rect): number {
-  let t0 = 0;
-  let t1 = Infinity;
-  for (const [o, d, lo, hi] of [
-    [ox, dx, r.minX, r.maxX],
-    [oz, dz, r.minZ, r.maxZ],
-  ] as const) {
-    if (Math.abs(d) < 1e-9) {
-      if (o < lo || o > hi) return Infinity;
-      continue;
-    }
-    let a = (lo - o) / d;
-    let b = (hi - o) / d;
-    if (a > b) [a, b] = [b, a];
-    t0 = Math.max(t0, a);
-    t1 = Math.min(t1, b);
-    if (t0 > t1) return Infinity;
-  }
-  return t0;
-}
 
 /**
  * Baked ambient occlusion on the floor plane, 0..1: rays fan out from the point and each one

@@ -57,3 +57,56 @@ export function hasFullFace(grid: Grid, x: number, y: number, dir: Dir): boolean
 
 /** Distance (metres) from a floor cell's centre to the face of the thin wall on one side. */
 export const WALL_FACE_DISTANCE = CELL_SIZE - WALL_THICKNESS / 2;
+
+/**
+ * Distance along a ray (unit or not: `t` is in multiples of (dx, dz)) to where it enters a box, or
+ * Infinity when it misses. A ray starting inside the box returns 0. (Slab method.)
+ */
+export function rayBox(ox: number, oz: number, dx: number, dz: number, r: Rect): number {
+  let t0 = 0;
+  let t1 = Infinity;
+  for (const [o, d, lo, hi] of [
+    [ox, dx, r.minX, r.maxX],
+    [oz, dz, r.minZ, r.maxZ],
+  ] as const) {
+    if (Math.abs(d) < 1e-12) {
+      if (o <= lo || o >= hi) return Infinity;
+      continue;
+    }
+    let a = (lo - o) / d;
+    let b = (hi - o) / d;
+    if (a > b) [a, b] = [b, a];
+    t0 = Math.max(t0, a);
+    t1 = Math.min(t1, b);
+    if (t0 >= t1) return Infinity;
+  }
+  return t0;
+}
+
+/**
+ * True when a wall slab lies strictly between two points (XZ metres). Exact, so it never steps
+ * over a slab thinner than a sampling interval. Pillars don't count (light wraps around them).
+ */
+export function wallBetween(grid: Grid, ax: number, az: number, bx: number, bz: number): boolean {
+  const dx = bx - ax;
+  const dz = bz - az;
+  const len = Math.hypot(dx, dz);
+  if (len < 1e-9) return false;
+  // Every cell the segment passes through: sample at under a quarter cell, which can only miss a
+  // cell's corner — and a wall slab never reaches into its cell's corners alone.
+  const steps = Math.ceil(len / (CELL_SIZE / 4));
+  const seen = new Set<number>();
+  for (let i = 0; i <= steps; i++) {
+    const x = Math.floor((ax + (dx * i) / steps) / CELL_SIZE);
+    const z = Math.floor((az + (dz * i) / steps) / CELL_SIZE);
+    const key = z * 65536 + x;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (!isWall(grid, x, z)) continue;
+    for (const r of solidRects(grid, x, z)) {
+      // Enters the slab before reaching b (t = 0: starts inside it).
+      if (rayBox(ax, az, dx, dz, r) < 1 - 1e-9) return true;
+    }
+  }
+  return false;
+}

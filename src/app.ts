@@ -19,8 +19,9 @@ import {
   createSanity, distortionFromSanity, drinkAlmondWater, fearDrain, isInsane, jolt, updateSanity,
 } from './game/sanity';
 import { spawnHowlerCell, spawnSmilerCells } from './game/spawns';
-import { createLightField } from './lighting/bake';
-import { flicker, lightFalloff, nearestLitLightsAt, panelLevel, sceneExposure } from './lighting/lights';
+import { AMBIENT_DARK, createLightField } from './lighting/bake';
+import { flicker, isFaultyLight, lightFalloff, nearestLitLightsAt, panelLevel, sceneExposure } from './lighting/lights';
+import { lightAt } from './lighting/sample';
 import { addBattery, createCamcorder, toggleNightVision, updateCamcorder } from './player/camcorder';
 import { applyLook, createPlayer, headBob, NO_INPUT, updatePlayer } from './player/controller';
 import { createDebugHud } from './ui/debugHud';
@@ -36,6 +37,7 @@ import { generateLevel } from './world/generator';
 import { Cell, CELL_SIZE, cellToWorld, DIR_STEP, getCell, isDark, worldToCell } from './world/grid';
 import { ITEM_COUNTS, type Item, placeItems } from './world/items';
 import { createProps } from './world/props';
+import type { ChunkPanels } from './world/chunkMesh';
 import { createChunkStreamer } from './world/streamer';
 import { loadWorldMaterials } from './world/textures';
 
@@ -86,6 +88,8 @@ const seed = params.seed ?? Math.floor(Math.random() * 0xffffffff) >>> 0;
 const level = generateLevel(seed);
 const materials = await loadWorldMaterials(createRng(deriveSeed(seed, 'textures')));
 const lightField = createLightField(level.grid);
+/** Baked light at a world point — props, the Howler and the IR light are matched to it. */
+const shade = (x: number, z: number) => lightAt(level.grid, lightField, x, z);
 const streamer = createChunkStreamer(scene, level.grid, materials, lightField);
 // Build the whole starting area up front, behind the title screen, so there's no pop-in at the start.
 streamer.update(level.start.x, level.start.y);
@@ -94,7 +98,7 @@ const lightSeed = deriveSeed(seed, 'lights');
 const truePath = shortestPath(level.grid, level.start, level.exit);
 const arrows = placeArrows(level.grid, truePath, createRng(deriveSeed(seed, 'clues')));
 const items = placeItems(level, truePath, createRng(deriveSeed(seed, 'items')));
-const props = createProps(scene, level, arrows, items, materials.wall.map);
+const props = createProps(scene, level, arrows, items, materials.wall.map, shade);
 const taken = new Set<number>();
 let notesFound = 0;
 const sanity = createSanity();
@@ -150,38 +154,54 @@ let sensitivity = (() => {
   }
 })();
 
+const panelColor = new THREE.Color();
+/** Per chunk: which panels are faulty (the only ones that change frame to frame) and the state last written. */
+const panelCache = new WeakMap<ChunkPanels, { faulty: number[]; state: string }>();
+/**
+ * Flicker, the Howler's warning and Presence blackouts act on individual ceiling panels (instance
+ * colours) and on the camera exposure — the baked room light itself never changes. A chunk's panels
+ * are all rewritten only when the blackout/dim state changes; otherwise just its faulty tubes.
+ * Returns the exposure multiplier.
+ */
+function updatePanels(timeSec: number, blackout: { x: number; z: number; radius: number } | null, dim: boolean): number {
+  const state = `${blackout ? `${blackout.x},${blackout.z}` : '-'}|${dim}`;
+  let nearest = 1;
+  const write = (p: ChunkPanels, i: number) => {
+    const c = p.cells[i];
+    const out = blackout !== null && Math.hypot(c.wx - blackout.x, c.wz - blackout.z) <= blackout.radius;
+    p.mesh.setColorAt(i, panelColor.setScalar(panelLevel(p.base[i], timeSec, c.y * level.grid.width + c.x, lightSeed, out, dim)));
+  };
+  for (const p of streamer.panels()) {
+    let cache = panelCache.get(p);
+    if (!cache) {
+      const faulty = p.cells.flatMap((c, i) => (p.base[i] === 1 && isFaultyLight(c.y * level.grid.width + c.x, lightSeed) ? [i] : []));
+      panelCache.set(p, (cache = { faulty, state: '' }));
+    }
+    const full = cache.state !== state;
+    if (full) {
+      for (let i = 0; i < p.cells.length; i++) write(p, i);
+      cache.state = state;
+    } else {
+      for (const i of cache.faulty) write(p, i);
+    }
+    if (full || cache.faulty.length > 0) {
+      if (p.mesh.instanceColor) p.mesh.instanceColor.needsUpdate = true;
+    }
+    // A faulty tube close overhead makes the whole view breathe with it.
+    for (const i of cache.faulty) {
+      const c = p.cells[i];
+      const fall = lightFalloff(Math.hypot(c.wx - player.pos.x, c.wz - player.pos.z));
+      if (fall > 0) nearest = Math.min(nearest, 1 - (1 - flicker(timeSec, c.y * level.grid.width + c.x, lightSeed)) * fall);
+    }
+  }
+  return sceneExposure(blackout !== null, dim, nearest);
+}
+
 /**
  * Raw (unaccelerated) mouse input so turning doesn't depend on the OS pointer acceleration;
  * falls back to a plain lock where unsupported. Rejections (e.g. re-locking within ~1 s of Esc)
  * are swallowed — the next click works.
  */
-const panelColor = new THREE.Color();
-/**
- * Flicker, the Howler's warning and Presence blackouts act on individual ceiling panels (instance
- * colours) and on the camera exposure — the baked room light itself never changes.
- */
-function updatePanels(timeSec: number, blackout: { x: number; z: number; radius: number } | null, dim: boolean): void {
-  let nearest = 1;
-  let nearestD = Infinity;
-  for (const p of streamer.panels()) {
-    for (let i = 0; i < p.cells.length; i++) {
-      const c = p.cells[i];
-      const id = c.y * level.grid.width + c.x;
-      const out = blackout !== null && Math.hypot(c.wx - blackout.x, c.wz - blackout.z) <= blackout.radius;
-      p.mesh.setColorAt(i, panelColor.setScalar(panelLevel(p.base[i], timeSec, id, lightSeed, out, dim)));
-      if (p.base[i] < 1) continue;
-      const d = Math.hypot(c.wx - player.pos.x, c.wz - player.pos.z);
-      if (d < nearestD) {
-        nearestD = d;
-        // A flickering tube only darkens the view when it's the one right above you.
-        nearest = 1 - (1 - flicker(timeSec, id, lightSeed)) * lightFalloff(d);
-      }
-    }
-    if (p.mesh.instanceColor) p.mesh.instanceColor.needsUpdate = true;
-  }
-  renderer.toneMappingExposure = EXPOSURE * sceneExposure(blackout !== null, dim, nearest);
-}
-
 function lockPointer(): void {
   const request = canvas.requestPointerLock as (options?: { unadjustedMovement?: boolean }) => Promise<void> | void;
   Promise.resolve(request.call(canvas, { unadjustedMovement: true })).catch(() =>
@@ -407,11 +427,15 @@ renderer.setAnimationLoop((now: number) => {
   // Presence/warning timers run on the tape clock, so they don't expire while paused.
   const gameMs = recordedSec * 1000;
   const activeBlackout = blackout && gameMs < blackout.until ? { x: blackout.x, z: blackout.z, radius: BLACKOUT_RADIUS } : null;
-  updatePanels(now / 1000, activeBlackout, gameMs < dimUntil);
+  const exposure = updatePanels(now / 1000, activeBlackout, gameMs < dimUntil);
+  // Night vision has its own gain: a blackout or dim doesn't blind the IR picture.
+  renderer.toneMappingExposure = EXPOSURE * (exposure + (1 - exposure) * camcorder.nvBlend);
   props.update(now / 1000);
-  entityViews.sync(entities, a, frameDt, phase === 'playing');
+  entityViews.sync(entities, a, frameDt, phase === 'playing', shade);
   irLight.position.copy(camera.position);
-  irLight.intensity = IR_INTENSITY * camcorder.nvBlend;
+  // Baked light multiplies every surface's albedo, the IR included; divide it back out so the
+  // camcorder sees as far into a dark zone as it always did.
+  irLight.intensity = (IR_INTENSITY * camcorder.nvBlend) / Math.max(AMBIENT_DARK, shade(camera.position.x, camera.position.z));
 
   hud.update({
     recording: playing || phase === 'reading' || (endedAt !== null && !endRevealed),

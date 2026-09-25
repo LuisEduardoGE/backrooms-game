@@ -4,6 +4,7 @@ import type { Level } from './generator';
 import { CELL_SIZE, cellToWorld, type Dir, DIR_STEP, WALL_HEIGHT } from './grid';
 import type { Item } from './items';
 import { WALL_FACE_DISTANCE } from './solids';
+import { TEXTURE_METRES } from './textures';
 
 /** Y-rotation that turns a +Z-facing plane to face out of the given wall into the cell. */
 const FACE_ROTATION: Record<Dir, number> = { N: 0, S: Math.PI, W: Math.PI / 2, E: -Math.PI / 2 };
@@ -68,7 +69,10 @@ function paperTexture(): THREE.CanvasTexture {
 function noclipMaterial(): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     fog: true,
-    uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { uTime: { value: 0 }, uMap: { value: null } }]),
+    uniforms: THREE.UniformsUtils.merge([
+      THREE.UniformsLib.fog,
+      { uTime: { value: 0 }, uMap: { value: null }, uScale: { value: new THREE.Vector2(1, 1) }, uOffset: { value: 0 }, uLight: { value: 1 } },
+    ]),
     vertexShader: /* glsl */ `
       #include <fog_pars_vertex>
       varying vec2 vUv;
@@ -83,13 +87,18 @@ function noclipMaterial(): THREE.ShaderMaterial {
       #include <fog_pars_fragment>
       uniform float uTime;
       uniform sampler2D uMap;
+      uniform vec2 uScale;
+      uniform float uOffset;
+      uniform float uLight;
       varying vec2 vUv;
       float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
       void main() {
         float t = fract(uTime / 100.0) * 100.0;
         float row = floor(vUv.y * 40.0);
         float shear = (hash(vec2(row, floor(t * 6.0))) - 0.5) * 0.12;
-        vec3 c = texture2D(uMap, vUv + vec2(shear, 0.0)).rgb * 0.75;
+        // Same world-metre mapping as the walls around it, so the exit is not a visual tell.
+        vec2 wallUv = (vUv * uScale + vec2(uOffset, 0.0)) / ${TEXTURE_METRES.wallpaper.toFixed(4)};
+        vec3 c = texture2D(uMap, wallUv + vec2(shear, 0.0)).rgb * uLight * 0.85;
         float spark = step(0.985, hash(floor(vUv * vec2(60.0, 80.0)) + floor(t * 8.0)));
         c = mix(c, vec3(1.0), spark * 0.7);
         gl_FragColor = vec4(c, 1.0);
@@ -116,6 +125,8 @@ export function createProps(
   arrows: readonly Arrow[],
   items: readonly Item[],
   wallMap: THREE.Texture | null,
+  /** Baked light at a world point; props sit in the same light as the surfaces around them. */
+  shade: (x: number, z: number) => number = () => 1,
 ) {
   const group = new THREE.Group();
   group.name = 'props';
@@ -140,7 +151,10 @@ export function createProps(
   const arrowMatMirrored = decal(mirroredMap);
   const arrowGeo = new THREE.PlaneGeometry(1.2, 0.6);
   for (const a of arrows) {
-    const mesh = new THREE.Mesh(arrowGeo, TEXTURE_RIGHT[a.wall] === a.points ? arrowMat : arrowMatMirrored);
+    const mat = (TEXTURE_RIGHT[a.wall] === a.points ? arrowMat : arrowMatMirrored).clone();
+    const mesh = new THREE.Mesh(arrowGeo, mat);
+    mesh.position.copy(wallFacePosition(a.cell, a.wall, 0.06, 1.35));
+    mat.color.multiplyScalar(shade(mesh.position.x, mesh.position.z));
     mesh.position.copy(wallFacePosition(a.cell, a.wall, 0.01, 1.35));
     mesh.rotation.y = FACE_ROTATION[a.wall];
     group.add(mesh);
@@ -176,6 +190,13 @@ export function createProps(
     obj.position.x = cellToWorld(item.cell.x);
     obj.position.z = cellToWorld(item.cell.y);
     obj.rotation.y = ((item.id * 2.399) % (Math.PI * 2)) - Math.PI;
+    const l = shade(obj.position.x, obj.position.z);
+    obj.traverse((o) => {
+      if (o instanceof THREE.Mesh) {
+        o.material = (o.material as THREE.MeshStandardMaterial).clone();
+        (o.material as THREE.MeshStandardMaterial).color.multiplyScalar(l);
+      }
+    });
     group.add(obj);
     itemMeshes.set(item.id, obj);
   }
@@ -187,6 +208,13 @@ export function createProps(
   const exitWall = new THREE.Mesh(new THREE.PlaneGeometry(CELL_SIZE, WALL_HEIGHT), noclip);
   exitWall.position.copy(wallFacePosition(level.exit, level.exitSide, 0.02, WALL_HEIGHT / 2));
   exitWall.rotation.y = FACE_ROTATION[level.exitSide];
+  noclip.uniforms.uScale.value.set(CELL_SIZE, WALL_HEIGHT);
+  // u of the plane's left edge in the walls' world-metre mapping (see wallFaces toQuad).
+  const n = DIR_STEP[level.exitSide];
+  const [nx, nz] = [-n.x, -n.y]; // the face looks back into the cell
+  const left = exitWall.position.clone().addScaledVector(new THREE.Vector3(nz, 0, -nx), -CELL_SIZE / 2);
+  noclip.uniforms.uOffset.value = left.x * nz - left.z * nx;
+  noclip.uniforms.uLight.value = shade(exitWall.position.x - n.x * 0.1, exitWall.position.z - n.y * 0.1);
   group.add(exitWall);
 
   return {

@@ -34,9 +34,14 @@ describe('cellLight', () => {
     expect(edge).toBeGreaterThan(deep);
     expect(deep).toBeCloseTo(AMBIENT_DARK, 6);
 
+    // The same dark half behind a wall on column 11 (odd: no panel is removed by the wall, so only
+    // occlusion can make the difference).
+    const open = room();
+    for (let y = 1; y <= 19; y++) for (let x = 12; x <= 19; x++) open.dark[y * 21 + x] = 1;
     const walled = room();
-    for (let y = 1; y <= 19; y++) for (let x = 11; x <= 19; x++) walled.dark[y * 21 + x] = 1;
-    for (let y = 1; y <= 19; y++) setCell(walled, 10, y, Cell.Wall);
-    expect(cellLight(walled, 11, 10)).toBeLessThan(edge);
+    for (let y = 1; y <= 19; y++) for (let x = 12; x <= 19; x++) walled.dark[y * 21 + x] = 1;
+    for (let y = 1; y <= 19; y++) setCell(walled, 11, y, Cell.Wall);
+    expect(cellLight(open, 12, 10)).toBeGreaterThan(AMBIENT_DARK + 0.15);
+    expect(cellLight(walled, 12, 10)).toBeCloseTo(AMBIENT_DARK, 6);
   });
 });

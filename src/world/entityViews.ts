@@ -35,11 +35,14 @@ interface HowlerRig {
   arms: [THREE.Group, THREE.Group];
   body: THREE.Group;
   phase: number;
+  skin: THREE.MeshStandardMaterial;
 }
+
+const SKIN = 0x1b1714;
 
 /** A 2.45 m, too-thin figure built from primitives, hunched to clear the 2.7 m ceiling. */
 function createHowler(): HowlerRig {
-  const skin = new THREE.MeshStandardMaterial({ color: 0x1b1714, roughness: 1 });
+  const skin = new THREE.MeshStandardMaterial({ color: SKIN, roughness: 1 });
   const eyeMat = new THREE.MeshStandardMaterial({ color: 0x110000, emissive: 0x662222, emissiveIntensity: 1.5 });
   const root = new THREE.Group();
   const body = new THREE.Group();
@@ -76,7 +79,7 @@ function createHowler(): HowlerRig {
     limb(0.05, 0.035, 1.35, new THREE.Vector3(-0.1, 1.35, 0)),
     limb(0.05, 0.035, 1.35, new THREE.Vector3(0.1, 1.35, 0)),
   ];
-  return { root, legs, arms, body, phase: 0 };
+  return { root, legs, arms, body, phase: 0, skin };
 }
 
 export function createEntityViews(scene: THREE.Scene) {
@@ -90,7 +93,8 @@ export function createEntityViews(scene: THREE.Scene) {
   const howlers = new Map<number, HowlerRig>();
 
   return {
-    sync(entities: readonly Entity[], alpha: number, dt: number, animate: boolean): void {
+    /** `shade(x, z)`: baked light at a point — the level's surfaces carry it, so the Howler must too. */
+    sync(entities: readonly Entity[], alpha: number, dt: number, animate: boolean, shade: (x: number, z: number) => number = () => 1): void {
       for (const e of entities) {
         const x = e.prevPos.x + (e.pos.x - e.prevPos.x) * alpha;
         const z = e.prevPos.z + (e.pos.z - e.prevPos.z) * alpha;
@@ -111,6 +115,7 @@ export function createEntityViews(scene: THREE.Scene) {
             howlers.set(e.id, h);
           }
           h.root.position.set(x, 0, z);
+          h.skin.color.setHex(SKIN).multiplyScalar(shade(x, z));
           h.root.rotation.y = e.heading;
           // Last fixed step's displacement × the 60 Hz step rate = metres per second.
           const speed = animate && dt > 0 ? Math.hypot(e.pos.x - e.prevPos.x, e.pos.z - e.prevPos.z) * 60 : 0;

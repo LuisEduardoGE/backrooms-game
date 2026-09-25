@@ -113,7 +113,7 @@ function wallColumn(grid: Grid, light: LightField, q: WallQuad, t: number): [num
   const z = q.z0 + (q.z1 - q.z0) * t + q.nz * 0.06;
   // The wall itself is right behind the probe, so a flat wall reads ~0.8 — rescale so only
   // corners (and columns beside it) darken.
-  return [lightAt(light, x, z), Math.min(1, contactShadow(grid, x, z) / 0.8)];
+  return [lightAt(grid, light, x, z), Math.min(1, contactShadow(grid, x, z) / 0.8)];
 }
 
 function wallShade([light, corner]: [number, number], y: number): number {
@@ -216,7 +216,7 @@ export function buildChunk(grid: Grid, cx: number, cy: number, mats: WorldMateri
   const sample = (x: number, z: number) => {
     const key = Math.round(x) * 100003 + Math.round(z);
     let s = samples.get(key);
-    if (!s) samples.set(key, (s = [lightAt(light, x, z), contactShadow(grid, x, z)]));
+    if (!s) samples.set(key, (s = [lightAt(grid, light, x, z), contactShadow(grid, x, z)]));
     return s;
   };
   const floor = new Builder();
