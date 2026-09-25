@@ -4,6 +4,7 @@ import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { scanlinePeriod } from './scanlines';
 import { VhsShader } from './vhsShader';
@@ -42,6 +43,8 @@ export function createVhsComposer(
   const bloom = new UnrealBloomPass(new THREE.Vector2(width, height), 0.22, 0.3, 0.95);
   composer.addPass(bloom);
   composer.addPass(new OutputPass());
+  // Edge anti-aliasing on display colours: keeps the fine ceiling grid from shimmering at distance.
+  composer.addPass(new SMAAPass());
   const vhs = new ShaderPass(VhsShader);
   composer.addPass(vhs);
   const buffer = new THREE.Vector2();

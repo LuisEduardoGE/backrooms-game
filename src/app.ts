@@ -70,10 +70,11 @@ renderer.toneMappingExposure = EXPOSURE;
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(FOG_COLOR);
 scene.fog = new THREE.FogExp2(FOG_COLOR, 0.022);
-// Even fluorescent fill; per-area brightness (and darkness in dead zones) is baked into the meshes.
-scene.add(new THREE.HemisphereLight(0xfff6d8, 0xc8b47a, 1.25));
-// Straight down from the ceiling grid: grazes the walls so the paper and carpet normal maps read.
-const keyLight = new THREE.DirectionalLight(0xfff2d0, 0.9);
+// Soft ambient fill; per-area brightness (and darkness in dead zones) is baked into the meshes.
+scene.add(new THREE.HemisphereLight(0xfff6d8, 0xc8b47a, 0.6));
+// A little straight-down fill; the real direct light comes from the panel lattice in the surface
+// shaders (lighting/panelLights.ts), which is what makes the wallpaper emboss and tile relief read.
+const keyLight = new THREE.DirectionalLight(0xfff2d0, 0.25);
 keyLight.position.set(0.15, 1, 0.1);
 scene.add(keyLight);
 
