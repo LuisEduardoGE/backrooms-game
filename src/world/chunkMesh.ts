@@ -3,6 +3,7 @@ import { isLightCell } from '../lighting/lights';
 import { contactShadow, type LightField, lightAt } from '../lighting/sample';
 import { CHUNK_CELLS } from './chunks';
 import { CELL_SIZE, cellToWorld, type Grid, isDark, WALL_HEIGHT } from './grid';
+import { ceilingDressing, puddles, wallVents } from './dressing';
 import { CEILING_TILE, type WorldMaterials } from './textures';
 import { faceStyle, type OutletSpot, outletSpots, type Paper, type WallQuad, wallQuads } from './wallFaces';
 
@@ -255,6 +256,71 @@ function addTBars(b: Builder, shade: (x: number, z: number) => number, wx0: numb
 }
 
 const outletGeo = new THREE.BoxGeometry(OUTLET.w, OUTLET.h, OUTLET.d);
+/** A ceiling-tile-sized quad facing down, and one facing up (floor decals), and a wall vent. */
+const tileDownGeo = new THREE.PlaneGeometry(CEILING_TILE, CEILING_TILE).rotateX(Math.PI / 2);
+const floorDecalGeo = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+const wallVentGeo = new THREE.BoxGeometry(0.42, 0.22, 0.02);
+/** A loose tile: hinged on one edge, UVs in metres so it shows exactly one tile of the scan. */
+const looseTileGeo = (() => {
+  const g = new THREE.PlaneGeometry(CEILING_TILE, CEILING_TILE).rotateX(Math.PI / 2).translate(0, 0, CEILING_TILE / 2);
+  const uv = g.getAttribute('uv');
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * CEILING_TILE, uv.getY(i) * CEILING_TILE);
+  return g;
+})();
+
+/** Instanced meshes from a list of transforms; instance colour = baked light × `tint`. */
+function placed(geo: THREE.BufferGeometry, mat: THREE.Material, items: { m: THREE.Matrix4; light: number }[]): THREE.InstancedMesh | null {
+  if (items.length === 0) return null;
+  const mesh = new THREE.InstancedMesh(geo, mat, items.length);
+  const color = new THREE.Color();
+  items.forEach((it, i) => {
+    mesh.setMatrixAt(i, it.m);
+    mesh.setColorAt(i, color.setScalar(it.light));
+  });
+  mesh.instanceMatrix.needsUpdate = true;
+  if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+  mesh.computeBoundingSphere();
+  return mesh;
+}
+
+/** Ceiling damage, vents and damp carpet for one chunk (see dressing.ts). */
+function dressing(grid: Grid, cx: number, cy: number, light: LightField, mats: WorldMaterials, quads: WallQuad[]): (THREE.Mesh | null)[] {
+  const at = (x: number, y: number, z: number, rotY = 0, rotX = 0, sx = 1, sz = 1) =>
+    new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(rotX, rotY, 0, 'YXZ')), new THREE.Vector3(sx, 1, sz));
+  const stains: { m: THREE.Matrix4; light: number }[] = [];
+  const voids: { m: THREE.Matrix4; light: number }[] = [];
+  const vents: { m: THREE.Matrix4; light: number }[] = [];
+  const loose: { m: THREE.Matrix4; light: number }[] = [];
+  for (const it of ceilingDressing(grid, cx, cy, CHUNK_CELLS)) {
+    const l = lightAt(grid, light, it.x, it.z);
+    const y = WALL_HEIGHT - 0.003;
+    if (it.kind === 'stain') stains.push({ m: at(it.x, y, it.z, it.seed * Math.PI * 2, 0, 0.6 + it.seed * 0.5, 0.6 + it.seed * 0.5), light: l });
+    else if (it.kind === 'vent') vents.push({ m: at(it.x, y, it.z), light: l });
+    else {
+      voids.push({ m: at(it.x, y, it.z), light: 1 });
+      if (it.kind === 'hanging') {
+        // Hinged on one tile edge, dropped ~30°.
+        const yaw = Math.floor(it.seed * 4) * (Math.PI / 2);
+        const hx = it.x - Math.sin(yaw) * (CEILING_TILE / 2);
+        const hz = it.z - Math.cos(yaw) * (CEILING_TILE / 2);
+        loose.push({ m: at(hx, WALL_HEIGHT - 0.01, hz, yaw, 0.5), light: l });
+      }
+    }
+  }
+  const wallVentItems = wallVents(quads).map((s) => ({
+    m: at(s.x + s.nx * 0.01, 2.25, s.z + s.nz * 0.01, Math.atan2(s.nx, s.nz)),
+    light: lightAt(grid, light, s.x + s.nx * 0.06, s.z + s.nz * 0.06),
+  }));
+  const puddleItems = puddles(grid, cx, cy, CHUNK_CELLS).map((p) => ({ m: at(p.x, 0.004, p.z, p.r * 7, 0, p.r * 2, p.r * 1.6), light: 1 }));
+  return [
+    placed(tileDownGeo, mats.stain, stains),
+    placed(tileDownGeo, mats.void, voids),
+    placed(tileDownGeo, mats.vent, vents),
+    placed(looseTileGeo, mats.looseTile, loose),
+    placed(wallVentGeo, mats.vent, wallVentItems),
+    placed(floorDecalGeo, mats.puddle, puddleItems),
+  ];
+}
 
 /** Outlet plates on the wall faces, instanced; instance colour carries the baked light there. */
 function outlets(spots: OutletSpot[], grid: Grid, light: LightField, mat: THREE.Material): THREE.InstancedMesh | null {
@@ -339,9 +405,16 @@ export function buildChunk(grid: Grid, cx: number, cy: number, mats: WorldMateri
     ceiling.mesh(mats.ceiling),
     tbars.mesh(mats.tbar),
     outlets(outletSpots(quads), grid, light, mats.outlet),
+    ...dressing(grid, cx, cy, light, mats, quads),
   ];
+  const casters = new Set<THREE.Material>([mats.wall, mats.wallDots, mats.wallStained, mats.rail, mats.outlet, mats.vent, mats.looseTile]);
+  const noShadow = new Set<THREE.Material>([mats.ceiling, mats.tbar, mats.void, mats.stain, mats.troffer]);
   for (const m of meshes) {
-    if (m) group.add(m);
+    if (!m) continue;
+    // Walls, rails, columns and fixtures cast shadow from the real panel lights; decals never do.
+    m.castShadow = casters.has(m.material as THREE.Material);
+    m.receiveShadow = !noShadow.has(m.material as THREE.Material);
+    group.add(m);
   }
   if (cells.length > 0) {
     const mesh = new THREE.InstancedMesh(trofferGeo, mats.troffer, cells.length);

@@ -37,6 +37,8 @@ export interface GenOptions {
   mergeChance: number;
   /** Chance a doorway is widened by a cell on each side. */
   widenChance: number;
+  /** Chance a large room (not a pillar hall) gets structures: partitions, blocks or a colonnade. */
+  structureChance: number;
 }
 
 /** Cells between columns in a pillar hall (8 m, like an open-plan office grid). */
@@ -55,6 +57,7 @@ export const DEFAULT_GEN: GenOptions = {
   exitDistanceRatio: 0.7,
   mergeChance: 0.4,
   widenChance: 0.6,
+  structureChance: 0.65,
 };
 
 interface Rect {
@@ -239,6 +242,7 @@ function tryGenerate(layoutSeed: number, o: GenOptions): Omit<Level, 'seed'> | n
   const rooms = buildRooms(grid, rng, o);
   connectRooms(grid, rooms, rng, o);
   openUp(grid, rng, o);
+  furnish(grid, rooms, rng, o);
   const startRoom = pickStartRoom(rooms, rng, o);
   const start = pickFloorCell(grid, startRoom, rng);
   assignDarkZones(grid, rooms, startRoom.id, rng, o.darkFraction);
@@ -440,11 +444,25 @@ function separatorsByPair(grid: Grid): Map<string, Point[]> {
  */
 function openUp(grid: Grid, rng: Rng, o: GenOptions): void {
   const MERGE_KEEP = 0.15; // share of a merged wall left standing as partition stubs
-  for (const cells of separatorsByPair(grid).values()) {
+  // Merged rooms become one hall: union-find over room ids, applied to grid.zone below.
+  let rooms = 0;
+  for (let i = 0; i < grid.room.length; i++) rooms = Math.max(rooms, grid.room[i] + 1);
+  const parent = Array.from({ length: rooms }, (_, i) => i);
+  const find = (a: number): number => (parent[a] === a ? a : (parent[a] = find(parent[a])));
+  const carved: { cell: Point; room: number }[] = [];
+  for (const [key, cells] of separatorsByPair(grid)) {
     if (rng.chance(o.mergeChance)) {
-      for (const c of cells) if (!rng.chance(MERGE_KEEP)) setCell(grid, c.x, c.y, Cell.Floor);
+      const [a, b] = key.split(':').map(Number);
+      parent[find(a)] = find(b);
+      for (const c of cells) {
+        if (rng.chance(MERGE_KEEP)) continue;
+        setCell(grid, c.x, c.y, Cell.Floor);
+        carved.push({ cell: c, room: a });
+      }
     }
   }
+  for (let i = 0; i < grid.room.length; i++) if (grid.room[i] >= 0) grid.zone[i] = find(grid.room[i]);
+  for (const { cell, room } of carved) grid.zone[cell.y * grid.width + cell.x] = find(room);
   // Widen doorways: a doorway is floor with no room id; grow it along its wall line.
   const doors: Point[] = [];
   for (let y = 1; y < grid.height - 1; y++) {
@@ -468,3 +486,60 @@ function openUp(grid: Grid, rng: Rng, o: GenOptions): void {
   }
 }
 
+
+type Structure = 'partitions' | 'blocks' | 'colonnade';
+
+/**
+ * Gives large rooms their own structure so no two feel alike: free-standing partition panels (as in
+ * the original photo), thick wall blocks (Kane Pixels) or a colonnade. Every structure keeps a ring
+ * of the room's own floor around it (8-way), so it can never cut a path or block a doorway.
+ */
+function furnish(grid: Grid, rooms: Room[], rng: Rng, o: GenOptions): void {
+  const kinds: Structure[] = ['partitions', 'partitions', 'blocks', 'colonnade'];
+  for (const room of rooms) {
+    if (room.pillared || room.w < 7 || room.h < 7 || !rng.chance(o.structureChance)) continue;
+    const kind = rng.pick(kinds);
+    const inRoom = (x: number, y: number) => getCell(grid, x, y) === Cell.Floor && grid.room[y * grid.width + x] === room.id;
+    /** Places `cells` as `as` if each has a clear ring of this room's floor; returns success. */
+    const place = (cells: Point[], as: Cell): boolean => {
+      for (const c of cells) {
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (!inRoom(c.x + dx, c.y + dy)) return false;
+      }
+      for (const c of cells) {
+        setCell(grid, c.x, c.y, as);
+        grid.room[c.y * grid.width + c.x] = -1;
+        grid.zone[c.y * grid.width + c.x] = -1;
+      }
+      return true;
+    };
+    const randomIn = (margin: number): Point => ({
+      x: rng.int(room.x + margin, room.x + room.w - margin),
+      y: rng.int(room.y + margin, room.y + room.h - margin),
+    });
+    if (kind === 'colonnade') {
+      // A line of columns down the middle of the room's long axis, every other cell.
+      const alongX = room.w >= room.h;
+      const mid = alongX ? room.y + Math.floor(room.h / 2) : room.x + Math.floor(room.w / 2);
+      const from = (alongX ? room.x : room.y) + 2;
+      const to = (alongX ? room.x + room.w : room.y + room.h) - 3;
+      for (let t = from; t <= to; t += 2) place([alongX ? { x: t, y: mid } : { x: mid, y: t }], Cell.Pillar);
+      continue;
+    }
+    const count = rng.int(1, 4);
+    let placed = 0;
+    for (let attempt = 0; attempt < 16 && placed < count; attempt++) {
+      const at = randomIn(2);
+      const cells: Point[] = [];
+      if (kind === 'partitions') {
+        const len = rng.int(2, 6);
+        const horizontal = rng.chance(0.5);
+        for (let k = 0; k < len; k++) cells.push(horizontal ? { x: at.x + k, y: at.y } : { x: at.x, y: at.y + k });
+      } else {
+        const w = rng.int(2, 4);
+        const h = rng.int(2, 3);
+        for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) cells.push({ x: at.x + x, y: at.y + y });
+      }
+      if (place(cells, Cell.Wall)) placed++;
+    }
+  }
+}

@@ -111,6 +111,9 @@ export function createEntityViews(scene: THREE.Scene) {
           let h = howlers.get(e.id);
           if (!h) {
             h = createHowler();
+            h.root.traverse((o) => {
+              o.castShadow = true;
+            });
             scene.add(h.root);
             howlers.set(e.id, h);
           }

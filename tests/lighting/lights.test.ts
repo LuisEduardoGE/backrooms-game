@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   flicker, FLICKER_RATE, isFaultyLight, isLightCell, lightFalloff, nearestLitLights, nearestLitLightsAt, panelGlow,
-  panelLevel, sceneExposure,
+  panelLevel, roomLightFactor, sceneExposure,
 } from '../../src/lighting/lights';
 import { Cell, createGrid, setCell } from '../../src/world/grid';
 
@@ -167,5 +167,21 @@ describe('sceneExposure', () => {
     const dip = sceneExposure(false, false, 0.15);
     expect(dip).toBeLessThan(1);
     expect(dip).toBeGreaterThan(0.75);
+  });
+});
+
+describe('roomLightFactor', () => {
+  it('makes some rooms dim, most normal and some brightly lit', () => {
+    const f = Array.from({ length: 400 }, (_, id) => roomLightFactor(id));
+    const dim = f.filter((v) => v < 0.6).length / f.length;
+    const bright = f.filter((v) => v > 1.2).length / f.length;
+    expect(dim).toBeGreaterThan(0.1);
+    expect(dim).toBeLessThan(0.35);
+    expect(bright).toBeGreaterThan(0.1);
+    expect(bright).toBeLessThan(0.35);
+  });
+
+  it('leaves spaces with no room (doorways, corridors) at the neutral density', () => {
+    expect(roomLightFactor(-1)).toBe(1);
   });
 });

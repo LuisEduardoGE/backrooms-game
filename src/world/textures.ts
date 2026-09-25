@@ -120,7 +120,7 @@ function stainedPaper(wallpaperImg: HTMLImageElement, stains: HTMLImageElement):
   ctx.drawImage(wallpaperImg, 0, 0, S, S);
   const [m, mc] = canvas(S);
   mc.drawImage(stains, 0, 0, S, S);
-  mc.fillStyle = 'rgba(255, 255, 255, 0.35)';
+  mc.fillStyle = 'rgba(255, 255, 255, 0.68)';
   mc.fillRect(0, 0, S, S);
   ctx.globalCompositeOperation = 'multiply';
   ctx.drawImage(m, 0, 0);
@@ -237,6 +237,64 @@ function outletPlate(): HTMLCanvasElement {
   return c;
 }
 
+/** Brown water-stain ring for ceiling tiles (alpha in the canvas). */
+function stainTexture(): HTMLCanvasElement {
+  const S = 256;
+  const [c, ctx] = canvas(S);
+  const g = ctx.createRadialGradient(S / 2, S / 2, S * 0.05, S / 2, S / 2, S * 0.48);
+  g.addColorStop(0, 'rgba(120, 90, 40, 0.35)');
+  g.addColorStop(0.7, 'rgba(110, 80, 35, 0.45)');
+  g.addColorStop(0.86, 'rgba(90, 62, 25, 0.8)');
+  g.addColorStop(1, 'rgba(90, 62, 25, 0)');
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  // An irregular blot rather than a perfect disc.
+  for (let i = 0; i <= 24; i++) {
+    const a = (i / 24) * Math.PI * 2;
+    const r = S * (0.4 + 0.08 * Math.sin(a * 3) + 0.05 * Math.cos(a * 5));
+    const x = S / 2 + Math.cos(a) * r;
+    const y = S / 2 + Math.sin(a) * r;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.fill();
+  return c;
+}
+
+/** Air-vent grille: louvred slots in an off-white frame. */
+function ventTexture(): HTMLCanvasElement {
+  const S = 256;
+  const [c, ctx] = canvas(S);
+  ctx.fillStyle = '#c9c0a2';
+  ctx.fillRect(0, 0, S, S);
+  ctx.fillStyle = '#2a261c';
+  const f = 26;
+  for (let y = f; y < S - f; y += 18) ctx.fillRect(f, y, S - f * 2, 9);
+  ctx.strokeStyle = 'rgba(90, 80, 55, 0.8)';
+  ctx.lineWidth = 6;
+  ctx.strokeRect(8, 8, S - 16, S - 16);
+  return c;
+}
+
+/**
+ * Soft, irregular damp patch as a greyscale alpha map (three.js alpha maps read the green channel,
+ * so this is black outside and fades from grey in the middle — never a hard edge).
+ */
+function puddleTexture(): HTMLCanvasElement {
+  const S = 256;
+  const [c, ctx] = canvas(S);
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, S, S);
+  for (const [x, y, r, a] of [[0.5, 0.5, 0.42, 0.55], [0.38, 0.45, 0.25, 0.35], [0.63, 0.58, 0.22, 0.3]] as const) {
+    const g = ctx.createRadialGradient(S * x, S * y, 0, S * x, S * y, S * r);
+    g.addColorStop(0, `rgba(255, 255, 255, ${a})`);
+    g.addColorStop(1, 'rgba(255, 255, 255, 0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, S, S);
+  }
+  return c;
+}
+
 export interface WorldMaterials {
   /** The chevron-and-chain paper of the original photo (CC0 scan, OpenGameArt). */
   wall: THREE.MeshStandardMaterial;
@@ -254,6 +312,16 @@ export interface WorldMaterials {
   troffer: THREE.MeshBasicMaterial;
   /** Outlet plates (instanced; instance colour carries the baked light). */
   outlet: THREE.MeshStandardMaterial;
+  /** Water stains on ceiling tiles. */
+  stain: THREE.MeshStandardMaterial;
+  /** The black void where a ceiling tile is missing. */
+  void: THREE.MeshBasicMaterial;
+  /** Vent grilles (ceiling and wall). */
+  vent: THREE.MeshStandardMaterial;
+  /** A loose ceiling tile hanging askew (instanced, no vertex colours). */
+  looseTile: THREE.MeshStandardMaterial;
+  /** Damp, glossy carpet patches. */
+  puddle: THREE.MeshStandardMaterial;
 }
 
 const images = new THREE.ImageLoader();
@@ -284,34 +352,40 @@ export async function loadWorldMaterials(rng: Rng, panels: PanelMap): Promise<Wo
   const bgNormalMap = finish(bgNormal, W, false);
   const bgRoughMap = finish(bgRough, W, false);
   const paperMat = (map: HTMLCanvasElement | HTMLImageElement, normalMap: THREE.Texture, roughnessMap: THREE.Texture) =>
-    lit(
-      new THREE.MeshStandardMaterial({
-        map: finish(map instanceof HTMLCanvasElement ? new THREE.CanvasTexture(map) : new THREE.Texture(map), W, true),
-        normalMap,
-        normalScale: new THREE.Vector2(0.8, 0.8),
-        roughnessMap,
-        roughness: 1,
-        vertexColors: true,
-      }),
-    );
+    new THREE.MeshStandardMaterial({
+      map: finish(map instanceof HTMLCanvasElement ? new THREE.CanvasTexture(map) : new THREE.Texture(map), W, true),
+      normalMap,
+      normalScale: new THREE.Vector2(0.8, 0.8),
+      roughnessMap,
+      roughness: 1,
+      vertexColors: true,
+    });
   const chevron = paperMat(bgColor, bgNormalMap, bgRoughMap);
   chevron.map!.needsUpdate = true;
+  const srgb = (c: HTMLCanvasElement) => {
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  };
+  // A loose tile shows one tile of the ceiling scan: its UVs are in metres, like the ceiling's.
+  const ceilingTileMap = finish(new THREE.CanvasTexture(ceiling(ceilingImg)), TEXTURE_METRES.ceiling, true);
+  const ceilingTileNormal = finish(ceilN.clone(), TEXTURE_METRES.ceiling, false);
   const plate = new THREE.CanvasTexture(outletPlate());
   plate.colorSpace = THREE.SRGBColorSpace;
   return {
     wall: chevron,
     wallDots: paperMat(dotPaper(paper, 0.6), finish(wallpaperNormal(paper), W, false), paperRoughMap),
     wallStained: paperMat(stainedPaper(bgColor, stained), bgNormalMap, bgRoughMap),
-    rail: lit(new THREE.MeshStandardMaterial({ color: 0x6f5535, roughness: 0.6, vertexColors: true })),
+    rail: new THREE.MeshStandardMaterial({ color: 0x6f5535, roughness: 0.6, vertexColors: true }),
     tbar: lit(new THREE.MeshStandardMaterial({ color: new THREE.Color(0.6, 0.57, 0.45), roughness: 0.7, vertexColors: true, side: THREE.DoubleSide }), 1.1, CEILING_PANEL_INTENSITY),
-    floor: lit(new THREE.MeshStandardMaterial({
+    floor: new THREE.MeshStandardMaterial({
       map: finish(new THREE.CanvasTexture(carpet(carpetImg, rng)), TEXTURE_METRES.carpet, true),
       normalMap: finish(carpetN, TEXTURE_METRES.carpet, false),
       normalScale: new THREE.Vector2(1.2, 1.2),
       roughnessMap: finish(carpetR, TEXTURE_METRES.carpet, false),
       roughness: 1,
       vertexColors: true,
-    })),
+    }),
     ceiling: lit(new THREE.MeshStandardMaterial({
       map: finish(new THREE.CanvasTexture(ceiling(ceilingImg)), TEXTURE_METRES.ceiling, true),
       normalMap: finish(ceilN, TEXTURE_METRES.ceiling, false),
@@ -328,6 +402,11 @@ export async function loadWorldMaterials(rng: Rng, panels: PanelMap): Promise<Wo
       color: new THREE.Color(2.0, 1.97, 1.85),
       fog: true,
     }),
-    outlet: lit(new THREE.MeshStandardMaterial({ map: plate, roughness: 0.45 })),
+    outlet: new THREE.MeshStandardMaterial({ map: plate, roughness: 0.45 }),
+    stain: new THREE.MeshStandardMaterial({ map: srgb(stainTexture()), transparent: true, depthWrite: false, roughness: 1, polygonOffset: true, polygonOffsetFactor: -2 }),
+    void: new THREE.MeshBasicMaterial({ color: 0x050403, polygonOffset: true, polygonOffsetFactor: -2 }),
+    vent: new THREE.MeshStandardMaterial({ map: srgb(ventTexture()), roughness: 0.6, metalness: 0.2, polygonOffset: true, polygonOffsetFactor: -2 }),
+    looseTile: new THREE.MeshStandardMaterial({ map: ceilingTileMap, normalMap: ceilingTileNormal, roughness: 1, side: THREE.DoubleSide, color: new THREE.Color(0.55, 0.55, 0.52) }),
+    puddle: new THREE.MeshStandardMaterial({ color: 0x3a3016, alphaMap: new THREE.CanvasTexture(puddleTexture()), transparent: true, depthWrite: false, roughness: 0.12, metalness: 0, polygonOffset: true, polygonOffsetFactor: -2 }),
   };
 }
