@@ -4,7 +4,8 @@ import type { Level } from './generator';
 import { CELL_SIZE, cellToWorld, type Dir, DIR_STEP, WALL_HEIGHT } from './grid';
 import type { Item } from './items';
 import { WALL_FACE_DISTANCE } from './solids';
-import { type Paper, paperFor, wallHeightShade } from './chunkMesh';
+import { wallHeightShade } from './chunkMesh';
+import { faceStyle, type Paper } from './wallFaces';
 
 /** Y-rotation that turns a +Z-facing plane to face out of the given wall into the cell. */
 const FACE_ROTATION: Record<Dir, number> = { N: 0, S: Math.PI, W: Math.PI / 2, E: -Math.PI / 2 };
@@ -116,7 +117,7 @@ export function createProps(
   level: Level,
   arrows: readonly Arrow[],
   items: readonly Item[],
-  /** The wall papers by name (see chunkMesh paperFor): the exit wears the same paper as its wall. */
+  /** The wall papers by name (see wallFaces faceStyle): the exit wears the same paper as its wall. */
   papers: Record<Paper, THREE.MeshStandardMaterial>,
   /** Baked light at a world point; props sit in the same light as the surfaces around them. */
   shade: (x: number, z: number) => number = () => 1,
@@ -200,7 +201,10 @@ export function createProps(
   const n = DIR_STEP[level.exitSide];
   const [nx, nz] = [-n.x, -n.y]; // the face looks back into the cell
   const face = wallFacePosition(level.exit, level.exitSide, 0, 0);
-  const noclip = noclipMaterial(papers[paperFor(nx, nz, face.x, face.z)], time);
+  // The exit face as a wall quad, so it is dressed by the same rule as the walls around it.
+  const [rx, rz] = [nz, -nx];
+  const exitQuad = { x0: face.x - rx, z0: face.z - rz, x1: face.x + rx, z1: face.z + rz, nx, nz, u0: 0, u1: CELL_SIZE };
+  const noclip = noclipMaterial(papers[faceStyle(level.grid, exitQuad).paper], time);
   const exitGeo = new THREE.PlaneGeometry(CELL_SIZE, WALL_HEIGHT, 4, 8);
   const exitWall = new THREE.Mesh(exitGeo, noclip);
   // Behind the baseboard's front (1.5 cm proud), in front of the wallpaper.

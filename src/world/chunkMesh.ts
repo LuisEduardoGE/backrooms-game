@@ -4,7 +4,7 @@ import { contactShadow, type LightField, lightAt } from '../lighting/sample';
 import { CHUNK_CELLS } from './chunks';
 import { CELL_SIZE, cellToWorld, type Grid, isDark, WALL_HEIGHT } from './grid';
 import { CEILING_TILE, type WorldMaterials } from './textures';
-import { type OutletSpot, outletSpots, type WallQuad, wallQuads } from './wallFaces';
+import { faceStyle, type OutletSpot, outletSpots, type Paper, type WallQuad, wallQuads } from './wallFaces';
 
 export type { LightField };
 
@@ -129,32 +129,6 @@ function wallShade([light, corner]: [number, number], y: number): number {
   // Corner shadow is strongest near the floor.
   const cornerAO = 1 - (1 - corner) * (0.55 + 0.45 * Math.exp(-y / 0.6));
   return light * cornerAO * wallHeightShade(y);
-}
-
-export type Paper = 'chevron' | 'dots' | 'stained';
-
-/**
- * The wall line a face lies on (its plane and facing), so every face along one straight wall —
- * across junctions and chunk borders — gets the same paper and rail.
- */
-function lineKey(nx: number, nz: number, x: number, z: number): [number, number] {
-  return nz !== 0 ? [Math.round(z * 20), 3 + nz] : [Math.round(x * 20), 7 + nx];
-}
-
-/**
- * Which paper a wall line wears: mostly the chevron-and-chain paper, about a third the dot paper
- * (the photo mixes both), and some chevron runs water-stained. Shared with the noclip exit wall.
- */
-export function paperFor(nx: number, nz: number, x: number, z: number): Paper {
-  const [a, b] = lineKey(nx, nz, x, z);
-  const r = hash(a, b + 911);
-  return r < 0.15 ? 'stained' : r < 0.45 ? 'dots' : 'chevron';
-}
-
-/** About two walls in five carry the low bumper rail. */
-function hasRail(q: WallQuad): boolean {
-  const [a, b] = lineKey(q.nx, q.nz, q.x0, q.z0);
-  return hash(a, b + 313) < 0.4;
 }
 
 function addWall(b: Builder, grid: Grid, light: LightField, q: WallQuad): void {
@@ -324,8 +298,9 @@ export function buildChunk(grid: Grid, cx: number, cy: number, mats: WorldMateri
   const rails = new Builder();
   const quads = wallQuads(grid, cx, cy, CHUNK_CELLS);
   for (const q of quads) {
-    addWall(papers[paperFor(q.nx, q.nz, q.x0, q.z0)], grid, light, q);
-    if (hasRail(q)) addStrip(rails, grid, light, q, RAIL_Y0, RAIL_Y1, RAIL_D);
+    const style = faceStyle(grid, q);
+    addWall(papers[style.paper], grid, light, q);
+    if (style.rail) addStrip(rails, grid, light, q, RAIL_Y0, RAIL_Y1, RAIL_D);
   }
 
   // Floor and ceiling share one vertex grid: sample light and contact shadow once per point.

@@ -66,14 +66,14 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 // AgX: soft filmic highlight roll-off, so bright panels and walls bloom into haze instead of clipping.
 renderer.toneMapping = THREE.AgXToneMapping;
 /** Exposed for the walls (the photo's brightest surfaces), as an auto-exposing camcorder would. */
-const EXPOSURE = 1.45;
+const EXPOSURE = 1.75;
 renderer.toneMappingExposure = EXPOSURE;
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(FOG_COLOR);
 scene.fog = new THREE.FogExp2(FOG_COLOR, 0.02);
 // Soft ambient fill; per-area brightness (and darkness in dead zones) is baked into the meshes.
-scene.add(new THREE.HemisphereLight(0xfff0c4, 0xa08e4c, 1.0));
+scene.add(new THREE.HemisphereLight(0xfff0c4, 0xa08e4c, 1.25));
 // A little straight-down fill; the real direct light comes from the panel lattice in the surface
 // shaders (lighting/panelLights.ts), which is what makes the wallpaper emboss and tile relief read.
 const keyLight = new THREE.DirectionalLight(0xfff2d0, 0.25);
