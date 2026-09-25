@@ -35,7 +35,17 @@ export function isLightCell(grid: Grid, x: number, y: number): boolean {
   if (getCell(grid, x, y) !== Cell.Floor) return false;
   const n = smoothNoise(x, y, 8);
   const density = DENSITY_MIN + (DENSITY_MAX - DENSITY_MIN) * n * n * (3 - 2 * n);
-  return cellHash(x, y, 1) < density;
+  return cellHash(x, y, 1) < density * roomLightFactor(grid.room[y * grid.width + x]);
+}
+
+/**
+ * Rooms differ: about one in five is dim (half its tubes gone), about one in five brightly lit,
+ * the rest as the layout noise gives. Doorways and corridors (no room) stay neutral.
+ */
+export function roomLightFactor(room: number): number {
+  if (room < 0) return 1;
+  const r = cellHash(room, 0, 29);
+  return r < 0.2 ? 0.35 : r > 0.8 ? 1.5 : 1;
 }
 
 /** Lit ceiling lights nearest to a cell centre (ties by y then x). */

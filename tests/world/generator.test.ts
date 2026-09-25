@@ -147,3 +147,45 @@ describe('generateLevel', () => {
   });
 });
 
+
+describe('room structures', () => {
+  /** Wall cells not connected (8-way) to the outer border's wall network: free-standing structures. */
+  function freeStanding(grid: ReturnType<typeof generateLevel>['grid']): number {
+    const W = grid.width;
+    const seen = new Uint8Array(grid.cells.length);
+    const stack: number[] = [];
+    for (let x = 0; x < W; x++) stack.push(x, (grid.height - 1) * W + x);
+    for (let y = 0; y < grid.height; y++) stack.push(y * W, y * W + W - 1);
+    while (stack.length) {
+      const i = stack.pop()!;
+      if (seen[i] || grid.cells[i] !== Cell.Wall) continue;
+      seen[i] = 1;
+      const x = i % W;
+      const y = (i - x) / W;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const nx = x + dx;
+        const ny = y + dy;
+        if (nx >= 0 && ny >= 0 && nx < W && ny < grid.height) stack.push(ny * W + nx);
+      }
+    }
+    let n = 0;
+    for (let i = 0; i < grid.cells.length; i++) if (grid.cells[i] === Cell.Wall && !seen[i]) n++;
+    return n;
+  }
+
+  it('furnishes some rooms with free-standing partitions and blocks (the photo, Kane Pixels)', () => {
+    for (const seed of [7, 42]) {
+      const plain = generateLevel(seed, { structureChance: 0 });
+      const furnished = generateLevel(seed);
+      expect(freeStanding(furnished.grid)).toBeGreaterThan(freeStanding(plain.grid) + 40);
+    }
+  });
+
+  it('keeps a walkable ring around every structure, so everything stays reachable', () => {
+    for (const seed of [3, 11]) {
+      const { grid, start } = generateLevel(seed);
+      const d = bfsDistances(grid, start.x, start.y);
+      for (let i = 0; i < grid.cells.length; i++) if (grid.cells[i] === Cell.Floor) expect(d[i]).toBeGreaterThanOrEqual(0);
+    }
+  });
+});
