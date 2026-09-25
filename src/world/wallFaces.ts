@@ -134,3 +134,42 @@ function toQuad(f: Face): WallQuad {
   const [p, q] = (b.x - a.x) * rx + (b.z - a.z) * rz > 0 ? [a, b] : [b, a];
   return { x0: p.x, z0: p.z, x1: q.x, z1: q.z, nx: nx + 0, nz: nz + 0, u0: p.x * rx + p.z * rz, u1: q.x * rx + q.z * rz };
 }
+
+/** A wall outlet: a point on a wall face (bottom edge, world metres) and the face's outward normal. */
+export interface OutletSpot {
+  quad: WallQuad;
+  x: number;
+  z: number;
+  nx: number;
+  nz: number;
+}
+
+/** Metres of wall per outlet on average ("scattered electrical outlets", as in the original photo). */
+const OUTLET_EVERY = 6;
+
+function hash01(a: number, b: number): number {
+  let h = Math.imul(Math.round(a * 100), 374761393) ^ Math.imul(Math.round(b * 100), 668265263);
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+
+/**
+ * Where electrical outlets sit: about one per OUTLET_EVERY metres of wall, only on faces at least
+ * 1.2 m long, never within 15 % of a face's ends. Deterministic from the faces' positions.
+ */
+export function outletSpots(quads: readonly WallQuad[]): OutletSpot[] {
+  const spots: OutletSpot[] = [];
+  for (const q of quads) {
+    const len = Math.hypot(q.x1 - q.x0, q.z1 - q.z0);
+    if (len < 1.2) continue;
+    const r = hash01(q.x0 + q.x1, q.z0 + q.z1);
+    const expected = len / OUTLET_EVERY;
+    const n = Math.floor(expected) + (r < expected - Math.floor(expected) ? 1 : 0);
+    for (let k = 0; k < n; k++) {
+      const jitter = (hash01(q.x0 + k * 7.3, q.z1 - k * 3.1) - 0.5) * (0.5 / n);
+      const t = Math.min(0.85, Math.max(0.15, (k + 0.5) / n + jitter));
+      spots.push({ quad: q, x: q.x0 + (q.x1 - q.x0) * t, z: q.z0 + (q.z1 - q.z0) * t, nx: q.nx, nz: q.nz });
+    }
+  }
+  return spots;
+}

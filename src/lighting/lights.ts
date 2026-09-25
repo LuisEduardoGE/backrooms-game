@@ -1,9 +1,12 @@
 import { deriveSeed } from '../core/rng';
 import { Cell, cellToWorld, type Grid, getCell, isDark, type Point, worldToCell } from '../world/grid';
 
-/** A fluorescent ceiling panel hangs over every floor cell with even x and even y (one per 4 m). */
+/**
+ * A square 2×2 ft fluorescent panel hangs over the centre of every floor cell: a dense 2 m grid,
+ * as in Kane Pixels' Level 0.
+ */
 export function isLightCell(grid: Grid, x: number, y: number): boolean {
-  return getCell(grid, x, y) === Cell.Floor && x % 2 === 0 && y % 2 === 0;
+  return getCell(grid, x, y) === Cell.Floor;
 }
 
 /** Lit ceiling lights nearest to a cell centre (ties by y then x). */

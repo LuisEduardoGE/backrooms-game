@@ -73,9 +73,11 @@ export const VhsShader = {
       );
       col = mix(col, texture2D(tDiffuse, uv - vec2(0.0025, 0.0)).rgb, 0.15);
 
-      // Grade: consumer-camcorder colour — slightly desaturated, warm lifted blacks, soft contrast.
+      // Grade: consumer-camcorder colour — the "mono-yellow" of the original photo comes from its
+      // camera's white balance under fluorescent tubes; then warm lifted blacks and soft contrast.
+      col *= mix(vec3(1.0), vec3(1.02, 0.99, 0.74), 1.0 - uNightVision);
       float g = dot(col, vec3(0.299, 0.587, 0.114));
-      col = mix(vec3(g), col, 0.82);
+      col = mix(vec3(g), col, 0.9);
       col = mix(col, vec3(0.5), 0.08);
       col += vec3(0.035, 0.028, 0.0) * (1.0 - g);
 

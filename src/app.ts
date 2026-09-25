@@ -41,8 +41,8 @@ import type { ChunkPanels } from './world/chunkMesh';
 import { createChunkStreamer } from './world/streamer';
 import { loadWorldMaterials } from './world/textures';
 
-/** A warm, pale haze: Level 0 fades into yellow, not into darkness. */
-const FOG_COLOR = 0x8a7c4a;
+/** Distance falls off into dim olive, as in the references — never a pale white haze. */
+const FOG_COLOR = 0x5e5628;
 /** Peak intensity of the camcorder's infrared illuminator in night vision. */
 const IR_INTENSITY = 6;
 
@@ -64,14 +64,15 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO));
 renderer.setSize(window.innerWidth, window.innerHeight);
 // AgX: soft filmic highlight roll-off, so bright panels and walls bloom into haze instead of clipping.
 renderer.toneMapping = THREE.AgXToneMapping;
-const EXPOSURE = 1.0;
+/** Exposed for the walls (the photo's brightest surfaces), as an auto-exposing camcorder would. */
+const EXPOSURE = 1.45;
 renderer.toneMappingExposure = EXPOSURE;
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(FOG_COLOR);
-scene.fog = new THREE.FogExp2(FOG_COLOR, 0.022);
+scene.fog = new THREE.FogExp2(FOG_COLOR, 0.02);
 // Soft ambient fill; per-area brightness (and darkness in dead zones) is baked into the meshes.
-scene.add(new THREE.HemisphereLight(0xfff6d8, 0xc8b47a, 0.6));
+scene.add(new THREE.HemisphereLight(0xfff0c4, 0xa08e4c, 1.0));
 // A little straight-down fill; the real direct light comes from the panel lattice in the surface
 // shaders (lighting/panelLights.ts), which is what makes the wallpaper emboss and tile relief read.
 const keyLight = new THREE.DirectionalLight(0xfff2d0, 0.25);
@@ -99,7 +100,7 @@ const lightSeed = deriveSeed(seed, 'lights');
 const truePath = shortestPath(level.grid, level.start, level.exit);
 const arrows = placeArrows(level.grid, truePath, createRng(deriveSeed(seed, 'clues')));
 const items = placeItems(level, truePath, createRng(deriveSeed(seed, 'items')));
-const props = createProps(scene, level, arrows, items, materials.wall, shade);
+const props = createProps(scene, level, arrows, items, { chevron: materials.wall, dots: materials.wallDots, stained: materials.wallStained }, shade);
 const taken = new Set<number>();
 let notesFound = 0;
 const sanity = createSanity();
@@ -134,7 +135,7 @@ let endRevealed = false;
 const player = createPlayer({ x: cellToWorld(level.start.x), z: cellToWorld(level.start.y) }, level.startYaw);
 const debugHud = params.debug ? createDebugHud(level) : null;
 // ?debug only: a console handle for inspecting a scene (e.g. teleport: __backrooms.player.pos.x = …).
-if (params.debug) Object.assign(window, { __backrooms: { player, level, camera } });
+if (params.debug) Object.assign(window, { __backrooms: { player, level, camera, materials } });
 if (params.debug) console.info(`[backrooms] seed ${seed} — reload with ?debug&seed=${seed} to replay`);
 
 const camcorder = createCamcorder();

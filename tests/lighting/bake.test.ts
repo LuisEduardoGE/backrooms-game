@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { AMBIENT_DARK, cellLight } from '../../src/lighting/bake';
 import { Cell, createGrid, setCell } from '../../src/world/grid';
 
-/** 21×21 open room (floor 1..19): panels on every even/even floor cell. */
+/** 21×21 open room (floor 1..19): a panel over every floor cell. */
 function room() {
   const g = createGrid(21, 21);
   for (let y = 1; y <= 19; y++) for (let x = 1; x <= 19; x++) setCell(g, x, y, Cell.Floor);
