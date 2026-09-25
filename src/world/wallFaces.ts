@@ -190,8 +190,8 @@ export interface FaceStyle {
 }
 
 /**
- * Wallpaper and rail for a face, decided per room — the way a real room is decorated: every face
- * looking into one room (its walls and its columns) shares one paper, and the rail runs round the
+ * Wallpaper and rail for a face, decided per hall — the way a real room is decorated: every face
+ * looking into one hall (its walls and its columns, across merged rooms) shares one paper, and the rail runs round the
  * whole room or not at all. Columns and short wall ends never carry a rail. Faces looking into a
  * doorway or corridor with no room id fall back to their wall line.
  */
@@ -204,7 +204,9 @@ export function faceStyle(grid: Grid, q: WallQuad): FaceStyle {
     const cx = Math.floor((mx + q.nx * d) / 2);
     const cz = Math.floor((mz + q.nz * d) / 2);
     if (cx < 0 || cz < 0 || cx >= grid.width || cz >= grid.height) break;
-    const room = grid.room[cz * grid.width + cx];
+    // The hall (merged rooms share one), falling back to the room for grids without halls.
+    const zone = grid.zone[cz * grid.width + cx];
+    const room = zone >= 0 ? zone : grid.room[cz * grid.width + cx];
     if (room >= 0) {
       key = room;
       break;
@@ -212,7 +214,7 @@ export function faceStyle(grid: Grid, q: WallQuad): FaceStyle {
   }
   const [a, b] = key >= 0 ? [key, 17] : [Math.round((q.nz !== 0 ? mz : mx) * 20), 3 + q.nz * 2 + q.nx];
   const r = hash01(a, b + 911);
-  const paper: Paper = r < 0.15 ? 'stained' : r < 0.45 ? 'dots' : 'chevron';
+  const paper: Paper = r < 0.08 ? 'stained' : r < 0.38 ? 'dots' : 'chevron';
   const behind = getCell(grid, Math.floor((mx - q.nx * 0.05) / 2), Math.floor((mz - q.nz * 0.05) / 2));
   const rail = behind !== Cell.Pillar && len >= 0.5 && hash01(a, b + 313) < 0.45;
   return { paper, rail };

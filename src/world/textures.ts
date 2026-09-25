@@ -120,7 +120,7 @@ function stainedPaper(wallpaperImg: HTMLImageElement, stains: HTMLImageElement):
   ctx.drawImage(wallpaperImg, 0, 0, S, S);
   const [m, mc] = canvas(S);
   mc.drawImage(stains, 0, 0, S, S);
-  mc.fillStyle = 'rgba(255, 255, 255, 0.35)';
+  mc.fillStyle = 'rgba(255, 255, 255, 0.68)';
   mc.fillRect(0, 0, S, S);
   ctx.globalCompositeOperation = 'multiply';
   ctx.drawImage(m, 0, 0);
@@ -276,16 +276,22 @@ function ventTexture(): HTMLCanvasElement {
   return c;
 }
 
-/** Soft round damp patch (alpha). */
+/**
+ * Soft, irregular damp patch as a greyscale alpha map (three.js alpha maps read the green channel,
+ * so this is black outside and fades from grey in the middle — never a hard edge).
+ */
 function puddleTexture(): HTMLCanvasElement {
   const S = 256;
   const [c, ctx] = canvas(S);
-  const g = ctx.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
-  g.addColorStop(0, 'rgba(255, 255, 255, 0.85)');
-  g.addColorStop(0.6, 'rgba(255, 255, 255, 0.6)');
-  g.addColorStop(1, 'rgba(255, 255, 255, 0)');
-  ctx.fillStyle = g;
+  ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, S, S);
+  for (const [x, y, r, a] of [[0.5, 0.5, 0.42, 0.55], [0.38, 0.45, 0.25, 0.35], [0.63, 0.58, 0.22, 0.3]] as const) {
+    const g = ctx.createRadialGradient(S * x, S * y, 0, S * x, S * y, S * r);
+    g.addColorStop(0, `rgba(255, 255, 255, ${a})`);
+    g.addColorStop(1, 'rgba(255, 255, 255, 0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, S, S);
+  }
   return c;
 }
 
@@ -401,6 +407,6 @@ export async function loadWorldMaterials(rng: Rng, panels: PanelMap): Promise<Wo
     void: new THREE.MeshBasicMaterial({ color: 0x050403, polygonOffset: true, polygonOffsetFactor: -2 }),
     vent: new THREE.MeshStandardMaterial({ map: srgb(ventTexture()), roughness: 0.6, metalness: 0.2, polygonOffset: true, polygonOffsetFactor: -2 }),
     looseTile: new THREE.MeshStandardMaterial({ map: ceilingTileMap, normalMap: ceilingTileNormal, roughness: 1, side: THREE.DoubleSide, color: new THREE.Color(0.55, 0.55, 0.52) }),
-    puddle: new THREE.MeshStandardMaterial({ color: 0x2c2410, alphaMap: new THREE.CanvasTexture(puddleTexture()), transparent: true, depthWrite: false, roughness: 0.12, metalness: 0, polygonOffset: true, polygonOffsetFactor: -2 }),
+    puddle: new THREE.MeshStandardMaterial({ color: 0x3a3016, alphaMap: new THREE.CanvasTexture(puddleTexture()), transparent: true, depthWrite: false, roughness: 0.12, metalness: 0, polygonOffset: true, polygonOffsetFactor: -2 }),
   };
 }

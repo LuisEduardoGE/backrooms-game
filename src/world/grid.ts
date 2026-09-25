@@ -21,6 +21,11 @@ export interface Grid {
   readonly dark: Uint8Array;
   /** Room id per cell; -1 for walls and doorways. */
   readonly room: Int32Array;
+  /**
+   * Hall id per cell: rooms merged into one open hall share it (so the hall is dressed as one
+   * space); -1 for walls, doorways and structures.
+   */
+  readonly zone: Int32Array;
 }
 
 export function createGrid(width: number, height: number): Grid {
@@ -30,6 +35,7 @@ export function createGrid(width: number, height: number): Grid {
     cells: new Uint8Array(width * height).fill(Cell.Wall),
     dark: new Uint8Array(width * height),
     room: new Int32Array(width * height).fill(-1),
+    zone: new Int32Array(width * height).fill(-1),
   };
 }
 

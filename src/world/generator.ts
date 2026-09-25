@@ -444,11 +444,25 @@ function separatorsByPair(grid: Grid): Map<string, Point[]> {
  */
 function openUp(grid: Grid, rng: Rng, o: GenOptions): void {
   const MERGE_KEEP = 0.15; // share of a merged wall left standing as partition stubs
-  for (const cells of separatorsByPair(grid).values()) {
+  // Merged rooms become one hall: union-find over room ids, applied to grid.zone below.
+  let rooms = 0;
+  for (let i = 0; i < grid.room.length; i++) rooms = Math.max(rooms, grid.room[i] + 1);
+  const parent = Array.from({ length: rooms }, (_, i) => i);
+  const find = (a: number): number => (parent[a] === a ? a : (parent[a] = find(parent[a])));
+  const carved: { cell: Point; room: number }[] = [];
+  for (const [key, cells] of separatorsByPair(grid)) {
     if (rng.chance(o.mergeChance)) {
-      for (const c of cells) if (!rng.chance(MERGE_KEEP)) setCell(grid, c.x, c.y, Cell.Floor);
+      const [a, b] = key.split(':').map(Number);
+      parent[find(a)] = find(b);
+      for (const c of cells) {
+        if (rng.chance(MERGE_KEEP)) continue;
+        setCell(grid, c.x, c.y, Cell.Floor);
+        carved.push({ cell: c, room: a });
+      }
     }
   }
+  for (let i = 0; i < grid.room.length; i++) if (grid.room[i] >= 0) grid.zone[i] = find(grid.room[i]);
+  for (const { cell, room } of carved) grid.zone[cell.y * grid.width + cell.x] = find(room);
   // Widen doorways: a doorway is floor with no room id; grow it along its wall line.
   const doors: Point[] = [];
   for (let y = 1; y < grid.height - 1; y++) {
@@ -494,6 +508,7 @@ function furnish(grid: Grid, rooms: Room[], rng: Rng, o: GenOptions): void {
       for (const c of cells) {
         setCell(grid, c.x, c.y, as);
         grid.room[c.y * grid.width + c.x] = -1;
+        grid.zone[c.y * grid.width + c.x] = -1;
       }
       return true;
     };

@@ -189,3 +189,27 @@ describe('room structures', () => {
     }
   });
 });
+
+describe('halls (zones)', () => {
+  it('gives rooms merged into one hall a single zone, so the hall is dressed as one space', () => {
+    for (const seed of [7, 42]) {
+      const { grid } = generateLevel(seed);
+      const W = grid.width;
+      let merged = 0;
+      for (let y = 1; y < grid.height - 1; y++) {
+        for (let x = 1; x < W - 1; x++) {
+          const z = grid.zone[y * W + x];
+          if (z < 0) continue;
+          for (const [dx, dy] of [[1, 0], [0, 1]]) {
+            const n = grid.zone[(y + dy) * W + x + dx];
+            if (n < 0) continue;
+            expect(n).toBe(z);
+            if (grid.room[y * W + x] !== grid.room[(y + dy) * W + x + dx]) merged++;
+          }
+        }
+      }
+      // Merges happened (so the check above really compared cells from different rooms).
+      expect(merged).toBeGreaterThan(10);
+    }
+  });
+});
