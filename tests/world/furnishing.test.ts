@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { bfsDistances } from '../../src/world/pathing';
-import { furnishRooms, type PropPlacement } from '../../src/world/furnishing';
+import { footprintSize, furnishRooms, type PropPlacement } from '../../src/world/furnishing';
 import { generateLevel } from '../../src/world/generator';
 import { Cell, CELL_SIZE, getCell, type Grid, worldToCell } from '../../src/world/grid';
 
@@ -125,5 +125,47 @@ describe('furnishRooms', () => {
         expect(Math.hypot(a.x - b.x, a.z - b.z)).toBeGreaterThanOrEqual(0.45);
       }
     }
+  });
+
+  it('never overlaps two pieces of furniture (desks side by side, a chair pushed into a desk)', () => {
+    // Real rotated footprints (props sit askew), separating-axis test; two seeds, one where desks clashed.
+    const corners = (p: PropPlacement) => {
+      const [w, d] = footprintSize(p.kind);
+      const c = Math.cos(p.yaw);
+      const s = Math.sin(p.yaw);
+      return [[-w / 2, -d / 2], [w / 2, -d / 2], [w / 2, d / 2], [-w / 2, d / 2]].map(([x, z]) => [p.x + x * c + z * s, p.z - x * s + z * c]);
+    };
+    const separated = (a: number[][], b: number[][]) => {
+      for (const poly of [a, b]) {
+        for (let i = 0; i < 4; i++) {
+          const [x1, z1] = poly[i];
+          const [x2, z2] = poly[(i + 1) % 4];
+          const nx = z2 - z1;
+          const nz = x1 - x2;
+          const pa = a.map(([x, z]) => x * nx + z * nz);
+          const pb = b.map(([x, z]) => x * nx + z * nz);
+          if (Math.max(...pa) < Math.min(...pb) + 0.01 || Math.max(...pb) < Math.min(...pa) + 0.01) return true;
+        }
+      }
+      return false;
+    };
+    for (const seed of [42, 12345]) {
+      const lv = generateLevel(seed);
+      const res = new Set<number>([lv.start.y * lv.grid.width + lv.start.x]);
+      // Standing, on-the-floor furniture outside heaps (a heap's pieces may tangle by design).
+      const floor = furnishRooms(lv, res).filter((p) => p.y === 0 && p.tilt === 0 && p.theme !== 'chairPile');
+      const clash: string[] = [];
+      for (let i = 0; i < floor.length; i++) {
+        for (let j = i + 1; j < floor.length; j++) {
+          if (floor[i].room !== floor[j].room) continue;
+          if (!separated(corners(floor[i]), corners(floor[j]))) clash.push(`${seed}: ${floor[i].kind}/${floor[j].kind}`);
+        }
+      }
+      expect(clash).toEqual([]);
+    }
+  });
+
+  it('lays knocked-over pieces down flat (y = 0 base; the model rests itself on its side)', () => {
+    for (const p of props) if (p.tilt !== 0) expect(p.y).toBe(0);
   });
 });

@@ -42,6 +42,7 @@ export interface PropPlacement {
 }
 
 /** Footprints (metres, measured from the loaded models): width along the wall × depth out from it. */
+export const footprintSize = (kind: PropKind): [number, number] => SIZE[kind];
 const SIZE: Record<PropKind, [number, number]> = {
   desk: [2.0, 0.95],
   schoolDesk: [0.71, 0.55],
@@ -88,10 +89,34 @@ function stream(seed: number, room: number) {
 
 const FACING: Record<Dir, number> = { N: 0, E: -Math.PI / 2, S: Math.PI, W: Math.PI / 2 };
 
-function rectAround(x: number, z: number, w: number, d: number, alongX: boolean): Rect {
-  const hw = (alongX ? w : d) / 2;
-  const hd = (alongX ? d : w) / 2;
-  return { minX: x - hw, maxX: x + hw, minZ: z - hd, maxZ: z + hd };
+/** A prop's footprint on the floor as 4 corners (rotated by its yaw, as the model is drawn). */
+function footprint(x: number, z: number, w: number, d: number, yaw: number): number[][] {
+  const c = Math.cos(yaw);
+  const s = Math.sin(yaw);
+  return [[-w / 2, -d / 2], [w / 2, -d / 2], [w / 2, d / 2], [-w / 2, d / 2]].map(([u, v]) => [x + u * c + v * s, z - u * s + v * c]);
+}
+
+/** Separating-axis test for two convex quads (touching within 1 cm counts as apart). */
+function quadsOverlap(a: number[][], b: number[][]): boolean {
+  for (const poly of [a, b]) {
+    for (let i = 0; i < 4; i++) {
+      const [x1, z1] = poly[i];
+      const [x2, z2] = poly[(i + 1) % 4];
+      const nx = z2 - z1;
+      const nz = x1 - x2;
+      const pa = a.map(([x, z]) => x * nx + z * nz);
+      const pb = b.map(([x, z]) => x * nx + z * nz);
+      if (Math.max(...pa) < Math.min(...pb) + 0.01 || Math.max(...pb) < Math.min(...pa) + 0.01) return false;
+    }
+  }
+  return true;
+}
+
+/** The axis-aligned box around a footprint: the prop's collider. */
+function boundsOf(poly: number[][]): Rect {
+  const xs = poly.map((p) => p[0]);
+  const zs = poly.map((p) => p[1]);
+  return { minX: Math.min(...xs), maxX: Math.max(...xs), minZ: Math.min(...zs), maxZ: Math.max(...zs) };
 }
 
 /**
@@ -168,6 +193,8 @@ class Placer {
   }
 
   private anchor = { x: 0, y: 0 };
+  /** Footprints of everything standing on this room's floor, so nothing is placed into another piece. */
+  private placed: number[][][] = [];
 
   private add(kind: PropKind, x: number, z: number, yaw: number, collide: Rect | null, y = 0, tilt = 0): void {
     this.out.push({ kind, theme: this.theme, room: this.room.id, cell: { ...this.anchor }, x, y, z, yaw, tilt, collide });
@@ -181,20 +208,28 @@ class Placer {
    * Stands `kind` against a free wall; returns where (wall direction and the prop's centre), or null.
    * `extra` props may be set in front of it (e.g. a chair at a desk) by the caller.
    */
-  againstWall(kind: PropKind, collides = true): { x: number; z: number; dir: Dir } | null {
+  againstWall(kind: PropKind, collides = true): { x: number; z: number; dir: Dir; kind: PropKind } | null {
     const spots = this.wallSpots();
-    if (spots.length === 0) return null;
-    const s = this.rnd.pick(spots);
     const [w, d] = SIZE[kind];
-    const step = DIR_STEP[s.dir];
-    const off = WALL_FACE_DISTANCE - d / 2 - 0.03;
-    const x = cellToWorld(s.x) + step.x * off;
-    const z = cellToWorld(s.y) + step.y * off;
-    const alongX = s.dir === 'N' || s.dir === 'S';
-    this.anchor = { x: s.x, y: s.y };
-    this.add(kind, x, z, FACING[s.dir] + this.rnd.range(-ASKEW, ASKEW), collides ? rectAround(x, z, w, d, alongX) : null);
-    this.mark(s.x, s.y);
-    return { x, z, dir: s.dir };
+    // A few tries: a big piece (a 2 m desk) may not fit beside what is already on that wall.
+    for (let attempt = 0; attempt < 12 && spots.length > 0; attempt++) {
+      const s = this.rnd.pick(spots);
+      const step = DIR_STEP[s.dir];
+      // Askew, and pulled out from the wall just enough that its turned corners clear it.
+      const yaw = FACING[s.dir] + this.rnd.range(-ASKEW, ASKEW);
+      const turn = Math.abs(Math.sin(yaw - FACING[s.dir]));
+      const off = WALL_FACE_DISTANCE - d / 2 - 0.03 - (w / 2) * turn;
+      const x = cellToWorld(s.x) + step.x * off;
+      const z = cellToWorld(s.y) + step.y * off;
+      const poly = footprint(x, z, w, d, yaw);
+      if (this.placed.some((q) => quadsOverlap(poly, q))) continue;
+      this.placed.push(poly);
+      this.anchor = { x: s.x, y: s.y };
+      this.add(kind, x, z, yaw, collides ? boundsOf(poly) : null);
+      this.mark(s.x, s.y);
+      return { x, z, dir: s.dir, kind };
+    }
+    return null;
   }
 
   /** Stacks `kind` on top of a prop already standing at (x, z). */
@@ -202,8 +237,14 @@ class Placer {
     this.add(kind, x, z, yaw, null, HEIGHT[onTopOf] ?? 0.4);
   }
 
-  /** A prop out in the room, `dist` metres from a wall prop, facing it (skipped if that spot isn't clear). */
-  inFront(kind: PropKind, at: { x: number; z: number; dir: Dir }, dist: number, facingWall: boolean, collides = true): void {
+  /**
+   * A prop out in the room in front of a wall prop, `gap` metres clear of it, facing it — skipped
+   * if that spot isn't clear or it would overlap something.
+   */
+  inFront(kind: PropKind, at: { x: number; z: number; dir: Dir; kind: PropKind }, gap: number, facingWall: boolean, collides = true): void {
+    const [w, d] = SIZE[kind];
+    // Clear of the wall prop's front whichever way this one ends up turned.
+    const dist = SIZE[at.kind][1] / 2 + Math.hypot(w, d) / 2 + gap;
     const step = DIR_STEP[at.dir];
     const x = at.x - step.x * dist;
     const z = at.z - step.y * dist;
@@ -211,14 +252,16 @@ class Placer {
     const cz = Math.floor(z / CELL_SIZE);
     const sameCell = cx === Math.floor(at.x / CELL_SIZE) && cz === Math.floor(at.z / CELL_SIZE);
     if (!sameCell && !this.clear(cx, cz)) return;
+    // Pushed out and turned as whoever used it left it.
+    const yaw = FACING[at.dir] + (facingWall ? Math.PI : 0) + this.rnd.range(-0.7, 0.7);
+    const poly = footprint(x, z, w, d, yaw);
+    if (this.placed.some((q) => quadsOverlap(poly, q))) return;
     if (!sameCell) {
       this.mark(cx, cz);
       this.anchor = { x: cx, y: cz };
     }
-    const [w, d] = SIZE[kind];
-    // Pushed out and turned as whoever used it left it.
-    const yaw = FACING[at.dir] + (facingWall ? Math.PI : 0) + this.rnd.range(-0.7, 0.7);
-    this.add(kind, x, z, yaw, collides ? rectAround(x, z, w, d, at.dir === 'N' || at.dir === 'S') : null);
+    this.placed.push(poly);
+    this.add(kind, x, z, yaw, collides ? boundsOf(poly) : null);
   }
 
   /** A cell with clear floor two cells around it (room to walk round a cluster), or null. */
@@ -254,9 +297,13 @@ class Placer {
         const z = cz + Math.sin(a) * r;
         if (!tipped && upright.some((u) => Math.hypot(u.x - x, u.z - z) < MIN_APART)) continue;
         if (!tipped) upright.push({ x, z });
-        this.add(kind, x, z, this.rnd.range(0, Math.PI * 2), null, tipped ? 0.22 : 0, tipped ? Math.PI / 2 : 0);
+        this.add(kind, x, z, this.rnd.range(0, Math.PI * 2), null, 0, tipped ? Math.PI / 2 : 0);
         break;
       }
+    }
+    if (this.out.length > before) {
+      const half = Math.min(radius + 0.25, CELL_SIZE / 2 - 0.05);
+      this.placed.push(footprint(cx, cz, half * 2, half * 2, 0));
     }
     if (collides && this.out.length > before) {
       // The heap's collider rides on its last prop; it fits inside the centre cell.
@@ -284,7 +331,7 @@ const FURNISH: Record<Theme, (p: Placer) => void> = {
       // Whatever was left on the desk.
       if (chance(p, 0.25)) p.stack('tv', desk.x, desk.z, kind, p.random.range(-0.5, 0.5));
       else if (chance(p, 0.3)) p.stack('box', desk.x, desk.z, kind, p.random.range(-0.6, 0.6));
-      if (chance(p, 0.6)) p.inFront(p.random.pick(['schoolChair', 'monobloc', 'schoolChair'] as const), desk, p.random.range(0.55, 1.1), true);
+      if (chance(p, 0.6)) p.inFront(p.random.pick(['schoolChair', 'monobloc', 'schoolChair'] as const), desk, p.random.range(0.02, 0.45), true);
     }
     // Chairs left wherever.
     for (let i = between(p, 0, 2); i > 0; i--) {
@@ -328,7 +375,7 @@ const FURNISH: Record<Theme, (p: Placer) => void> = {
   },
   household(p) {
     const seat = p.againstWall(chance(p, 0.6) ? 'sofa' : 'armchair');
-    if (seat && chance(p, 0.5)) p.inFront('tv', seat, p.random.range(1.6, 2.6), true);
+    if (seat && chance(p, 0.5)) p.inFront('tv', seat, p.random.range(0.9, 1.9), true);
     else if (chance(p, 0.5)) {
       // The TV propped on whatever was to hand.
       const stand = chance(p, 0.5) ? 'crate' : 'box';

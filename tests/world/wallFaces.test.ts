@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { Cell, createGrid, type Grid, PILLAR_SIZE, setCell } from '../../src/world/grid';
 import { generateLevel } from '../../src/world/generator';
 import { solidRects, WALL_THICKNESS } from '../../src/world/solids';
-import { faceStyle, outletSpots, type WallQuad, wallQuads } from '../../src/world/wallFaces';
+import { faceStyle, outletSpots, SOCKET_Y, SWITCH_Y, switchSpots, type WallQuad, wallQuads } from '../../src/world/wallFaces';
 
 /** 12×12 floor with no border, so only hand-placed solids exist. */
 function open(): Grid {
@@ -222,8 +222,23 @@ describe('wall items are scattered, not patterned', () => {
     expect(Math.max(...counts)).toBeGreaterThanOrEqual(3);
   });
 
-  it('hangs outlets at more than one height (sockets low, a few switches higher)', () => {
-    const heights = new Set(spots.map((s) => Math.round((s.y ?? 0) * 10)));
-    expect(heights.size).toBeGreaterThanOrEqual(3);
+  it('puts every socket at one height, clear of the rail (a building has one socket height)', () => {
+    for (const s of spots) {
+      expect(s.y).toBe(SOCKET_Y);
+      expect(SOCKET_Y - 0.0575).toBeGreaterThan(0.25); // plate bottom above the rail's top
+    }
+  });
+
+  it('puts light switches only beside openings, at switch height', () => {
+    const switches = switchSpots(level.grid, quads);
+    expect(switches.length).toBeGreaterThan(5);
+    for (const sw of switches) {
+      expect(sw.y).toBe(SWITCH_Y);
+      // Within half a metre of a face end whose wall stops there (an opening), not a corner.
+      const q = sw.quad;
+      const len = Math.hypot(q.x1 - q.x0, q.z1 - q.z0);
+      const t = Math.hypot(sw.x - q.x0, sw.z - q.z0);
+      expect(Math.min(t, len - t)).toBeLessThan(0.5);
+    }
   });
 });

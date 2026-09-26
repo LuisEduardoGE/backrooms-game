@@ -205,6 +205,27 @@ function troffer(): HTMLCanvasElement {
   return c;
 }
 
+/** A single-toggle light-switch plate in the same aged ivory. */
+function switchPlate(): HTMLCanvasElement {
+  const W = 128;
+  const H = 192;
+  const c = document.createElement('canvas');
+  c.width = W;
+  c.height = H;
+  const ctx = c.getContext('2d');
+  if (!ctx) throw new Error('2D canvas unavailable');
+  ctx.fillStyle = '#cfc4a0';
+  ctx.fillRect(0, 0, W, H);
+  ctx.strokeStyle = 'rgba(90, 80, 50, 0.45)';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(2, 2, W - 4, H - 4);
+  ctx.fillStyle = '#b9ad88';
+  ctx.fillRect(W * 0.4, H * 0.35, W * 0.2, H * 0.3);
+  ctx.fillStyle = '#e2d9b8';
+  ctx.fillRect(W * 0.43, H * 0.37, W * 0.14, H * 0.13);
+  return c;
+}
+
 /** A beige duplex outlet plate with two sockets. */
 function outletPlate(): HTMLCanvasElement {
   const W = 128;
@@ -214,7 +235,8 @@ function outletPlate(): HTMLCanvasElement {
   c.height = H;
   const ctx = c.getContext('2d');
   if (!ctx) throw new Error('2D canvas unavailable');
-  ctx.fillStyle = '#e4dcc0';
+  // Aged ivory plastic, a shade darker than new so it sits in the wall instead of glowing on it.
+  ctx.fillStyle = '#cfc4a0';
   ctx.fillRect(0, 0, W, H);
   ctx.strokeStyle = 'rgba(90, 80, 50, 0.45)';
   ctx.lineWidth = 3;
@@ -313,6 +335,8 @@ export interface WorldMaterials {
   troffer: THREE.MeshBasicMaterial;
   /** Outlet plates (instanced; instance colour carries the baked light). */
   outlet: THREE.MeshStandardMaterial;
+  /** Light-switch plates beside openings. */
+  lightSwitch: THREE.MeshStandardMaterial;
   /** Water stains on ceiling tiles. */
   stain: THREE.MeshStandardMaterial;
   /** The black void where a ceiling tile is missing. */
@@ -403,7 +427,9 @@ export async function loadWorldMaterials(rng: Rng, panels: PanelMap): Promise<Wo
       color: new THREE.Color(2.0, 1.97, 1.85),
       fog: true,
     }),
-    outlet: new THREE.MeshStandardMaterial({ map: plate, roughness: 0.45 }),
+    // Matte: glossy plates caught the panel lights and read as bright specks from across a room.
+    outlet: new THREE.MeshStandardMaterial({ map: plate, roughness: 0.85 }),
+    lightSwitch: new THREE.MeshStandardMaterial({ map: srgb(switchPlate()), roughness: 0.85 }),
     stain: new THREE.MeshStandardMaterial({ map: srgb(stainTexture()), transparent: true, depthWrite: false, roughness: 1, polygonOffset: true, polygonOffsetFactor: -2 }),
     void: new THREE.MeshBasicMaterial({ color: 0x050403, polygonOffset: true, polygonOffsetFactor: -2 }),
     vent: new THREE.MeshStandardMaterial({ map: srgb(ventTexture()), roughness: 0.6, metalness: 0.2, polygonOffset: true, polygonOffsetFactor: -2 }),
