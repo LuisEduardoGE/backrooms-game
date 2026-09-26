@@ -2,11 +2,17 @@ import * as THREE from 'three';
 import { WALL_HEIGHT } from '../world/grid';
 import type { Slot } from './shadowSlots';
 
-/** Full intensity of one panel's real light (candela-ish, physically based spot, decay 2). */
-const PANEL_CANDELA = 24;
+/**
+ * Full intensity of one panel's real light (candela-ish, physically based spot, decay 2). Kept
+ * modest: the fill (bounce) light must stay strong enough that a shadowed face is ~60 % of a lit
+ * one, as in a real fluorescent-lit room — at 24 a wall face facing a lamp read as a flat, pale
+ * cut-out against near-black faces around the corner.
+ */
+const PANEL_CANDELA = 11;
 /** A troffer throws light in a wide cone below it; the penumbra softens its edge completely. */
 const CONE = Math.PI / 2.3;
-const RANGE = 9;
+/** Real light reaches only a few metres: a soft pool around the player. At 9 m it threw hard-edged patches onto walls far away, which read as flat pale slabs. */
+const RANGE = 5;
 const SHADOW_MAP = 512;
 
 /**
@@ -23,7 +29,7 @@ export function createShadowLights(scene: THREE.Scene, count: number) {
     light.shadow.camera.far = RANGE;
     light.shadow.bias = -0.0004;
     light.shadow.normalBias = 0.03;
-    light.shadow.radius = 4;
+    light.shadow.radius = 6;
     scene.add(light);
     scene.add(light.target);
     return light;

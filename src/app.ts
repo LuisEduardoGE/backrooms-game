@@ -87,7 +87,7 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color(FOG_COLOR);
 scene.fog = new THREE.FogExp2(FOG_COLOR, 0.02);
 // Soft ambient fill; per-area brightness (and darkness in dead zones) is baked into the meshes.
-scene.add(new THREE.HemisphereLight(0xfff0c4, 0xa08e4c, 0.75));
+scene.add(new THREE.HemisphereLight(0xfff0c4, 0xa08e4c, 1.25));
 
 const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.05, 120);
 camera.rotation.order = 'YXZ';
@@ -186,7 +186,7 @@ let endRevealed = false;
 const player = createPlayer({ x: cellToWorld(level.start.x), z: cellToWorld(level.start.y) }, level.startYaw);
 const debugHud = params.debug ? createDebugHud(level) : null;
 // ?debug only: a console handle for inspecting a scene (e.g. teleport: __backrooms.player.pos.x = …).
-if (params.debug) Object.assign(window, { __backrooms: { player, level, camera, materials, scene, furniture, renderer } });
+if (params.debug) Object.assign(window, { __backrooms: { player, level, camera, materials, scene, furniture, renderer, get vhs() { return vhs; } } });
 if (params.debug) console.info(`[backrooms] seed ${seed} — reload with ?debug&seed=${seed} to replay`);
 
 const camcorder = createCamcorder();
@@ -213,7 +213,7 @@ const panelColor = new THREE.Color();
 /** Real shadow-casting lights on the nearest panels (see lighting/shadowSlots). */
 const SHADOW_LIGHTS = 4;
 /** Panels farther than this (metres) never get a real light; they fade out before it. */
-const SHADOW_LIGHT_REACH = 9;
+const SHADOW_LIGHT_REACH = 6;
 /** How fast a real light fades in or out when it changes panel (intensity per second). */
 const SHADOW_FADE = 3;
 const shadowSlots = createSlots(SHADOW_LIGHTS);

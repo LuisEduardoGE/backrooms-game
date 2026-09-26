@@ -70,6 +70,42 @@ describe('wallQuads', () => {
   });
 });
 
+describe('wallQuads at junctions (no holes)', () => {
+  /** Is the point (x, z) on the room side covered by some face with normal (nx, nz) at plane c? */
+  function covered(quads: WallQuad[], axis: 'x' | 'z', c: number, sign: number, t: number): boolean {
+    return quads.some((q) => {
+      if (axis === 'z' ? q.nz !== sign || Math.abs(q.z0 - c) > 1e-6 : q.nx !== sign || Math.abs(q.x0 - c) > 1e-6) return false;
+      const [a, b] = axis === 'z' ? [Math.min(q.x0, q.x1), Math.max(q.x0, q.x1)] : [Math.min(q.z0, q.z1), Math.max(q.z0, q.z1)];
+      return t > a && t < b;
+    });
+  }
+
+  it('builds the border wall face on both sides of a wall that runs into it (the T at the map edge)', () => {
+    // Floor everywhere except the bottom border row (y = 7) and a wall column x = 4 running into it.
+    const g = createGrid(9, 8);
+    for (let y = 0; y < 7; y++) for (let x = 0; x < 9; x++) setCell(g, x, y, Cell.Floor);
+    for (let y = 4; y < 7; y++) setCell(g, 4, y, Cell.Wall);
+    const quads = wallQuads(g, 0, 0, 16);
+    const face = 7 * 2 + 1 - WALL_THICKNESS / 2; // the border wall's room-side face (z)
+    // Just left and right of the joining wall's slab (centred at x = 9).
+    expect(covered(quads, 'z', face, -1, 8.3)).toBe(true);
+    expect(covered(quads, 'z', face, -1, 9.7)).toBe(true);
+  });
+
+  it('builds all four corner faces of a cross junction', () => {
+    const g = open();
+    for (let x = 2; x <= 6; x++) setCell(g, x, 4, Cell.Wall);
+    for (let y = 2; y <= 6; y++) setCell(g, 4, y, Cell.Wall);
+    const quads = wallQuads(g, 0, 0, 16);
+    const h = WALL_THICKNESS / 2;
+    // The cross centre is (9, 9); its arms' faces must reach right up to the crossing.
+    expect(covered(quads, 'z', 9 - h, -1, 8.5)).toBe(true);
+    expect(covered(quads, 'z', 9 + h, 1, 9.5)).toBe(true);
+    expect(covered(quads, 'x', 9 - h, -1, 9.5)).toBe(true);
+    expect(covered(quads, 'x', 9 + h, 1, 8.5)).toBe(true);
+  });
+});
+
 describe('outletSpots', () => {
   function hall(): Grid {
     const g = open();
