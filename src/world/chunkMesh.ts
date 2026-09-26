@@ -7,7 +7,7 @@ import { ceilingDressing, puddles, wallVents } from './dressing';
 import { ARCH_SPRING, type ArchDoorway, archDoorways, doorHeaders, type Header } from './headers';
 import { ARCH_WIDTH, WALL_THICKNESS } from './solids';
 import { CEILING_TILE, type WorldMaterials } from './textures';
-import { faceStyle, type OutletSpot, outletSpots, type Paper, type WallQuad, wallQuads } from './wallFaces';
+import { faceStyle, type OutletSpot, outletSpots, type Paper, switchSpots, type WallQuad, wallQuads } from './wallFaces';
 
 export type { LightField };
 
@@ -519,6 +519,7 @@ export function buildChunk(grid: Grid, cx: number, cy: number, mats: WorldMateri
     ceiling.mesh(mats.ceiling),
     tbars.mesh(mats.tbar),
     outlets(outletSpots(quads), grid, light, mats.outlet),
+    outlets(switchSpots(grid, quads), grid, light, mats.lightSwitch),
     ...dressing(grid, cx, cy, light, mats, quads),
   ];
   // Only big shapes cast: rails, outlets and vents sit flat on the wall and would only add shadow-map work.

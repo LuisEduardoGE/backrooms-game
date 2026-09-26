@@ -136,7 +136,7 @@ const furnitureAt = (cx: number, cy: number): readonly Rect[] => furnitureSolids
 function chunkFurniture(cx: number, cy: number): THREE.Object3D[] {
   const instances: PropInstance[] = (furnitureByChunk.get(`${cx},${cy}`) ?? []).map((p) => ({
     kind: p.kind,
-    matrix: placementMatrix(p),
+    matrix: placementMatrix(p, propTemplates.sizes[p.kind]),
     light: shade(p.x, p.z),
   }));
   for (const f of wallFixtures(wallQuads(level.grid, cx, cy, CHUNK_CELLS))) {

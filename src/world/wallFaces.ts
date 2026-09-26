@@ -188,15 +188,42 @@ export function spotsAlong(quads: readonly WallQuad[], every: number, salt = 0):
   return spots;
 }
 
-/**
- * Where electrical outlets sit ("scattered electrical outlets", as in the original photo): mostly
- * sockets low on the wall at slightly varying heights, some light switches at hand height.
- */
+/** Socket height (metres, plate centre): one height throughout, clear above the bumper rail. */
+export const SOCKET_Y = 0.34;
+/** Light-switch height (plate centre). */
+export const SWITCH_Y = 1.15;
+
+/** Where electrical sockets sit ("scattered electrical outlets", as in the original photo). */
 export function outletSpots(quads: readonly WallQuad[]): OutletSpot[] {
-  return spotsAlong(quads, OUTLET_EVERY).map((s) => {
-    const r = hash01(s.x * 7.7, s.z * 3.3);
-    return { ...s, y: r < 0.15 ? 1.1 + r : 0.24 + r * 0.2 };
-  });
+  return spotsAlong(quads, OUTLET_EVERY).map((s) => ({ ...s, y: SOCKET_Y }));
+}
+
+/**
+ * Light switches, where real ones go: on the wall right beside an opening (a face end where the
+ * wall stops, not a corner), about a third of them, 30 cm in from the edge.
+ */
+export function switchSpots(grid: Grid, quads: readonly WallQuad[]): OutletSpot[] {
+  const out: OutletSpot[] = [];
+  for (const q of quads) {
+    const len = Math.hypot(q.x1 - q.x0, q.z1 - q.z0);
+    if (len < 1) continue;
+    const ux = (q.x1 - q.x0) / len;
+    const uz = (q.z1 - q.z0) / len;
+    for (const [end, dir, t] of [[0, -1, 0.3], [1, 1, len - 0.3]] as const) {
+      const ex = end ? q.x1 : q.x0;
+      const ez = end ? q.z1 : q.z0;
+      // Just past the end, a little in front of the face: open floor means the wall stops here.
+      const px = ex + ux * dir * 0.2 + q.nx * 0.05;
+      const pz = ez + uz * dir * 0.2 + q.nz * 0.05;
+      const cx = Math.floor(px / CELL_SIZE);
+      const cz = Math.floor(pz / CELL_SIZE);
+      const blocked = solidRects(grid, cx, cz).some((r) => px > r.minX && px < r.maxX && pz > r.minZ && pz < r.maxZ);
+      if (blocked) continue;
+      if (hash01(ex * 5.1 + 17, ez * 3.7) >= 0.35) continue;
+      out.push({ quad: q, x: q.x0 + ux * t, z: q.z0 + uz * t, nx: q.nx, nz: q.nz, y: SWITCH_Y });
+    }
+  }
+  return out;
 }
 
 export type Paper = 'chevron' | 'dots' | 'stained';

@@ -37,7 +37,7 @@ interface Part {
   matrix: THREE.Matrix4;
 }
 
-export type PropTemplates = Record<PropKind | FixtureKind, Part[]>;
+export type PropTemplates = Record<PropKind | FixtureKind, Part[]> & { sizes: Record<PropKind | FixtureKind, ModelSize> };
 
 /**
  * Loads every prop model once. Each is normalised to stand on y = 0, centred on its footprint;
@@ -69,10 +69,18 @@ export async function loadPropModels(): Promise<PropTemplates> {
           matrix: shift.clone().multiply(o.matrixWorld),
         })),
       );
-      return [kind, parts] as const;
+      const size = new THREE.Box3();
+      for (const part of parts) {
+        part.geometry.computeBoundingBox();
+        size.union(part.geometry.boundingBox!.clone().applyMatrix4(part.matrix));
+      }
+      const dims = size.getSize(new THREE.Vector3());
+      return [kind, parts, { w: dims.x, h: dims.y, d: dims.z }] as const;
     }),
   );
-  return Object.fromEntries(entries) as PropTemplates;
+  const templates = Object.fromEntries(entries.map(([k, parts]) => [k, parts])) as unknown as PropTemplates;
+  templates.sizes = Object.fromEntries(entries.map(([k, , size]) => [k, size])) as PropTemplates['sizes'];
+  return templates;
 }
 
 /** Parts denser than this (triangles) are simplified at load. */
@@ -99,10 +107,22 @@ export interface PropInstance {
   light: number;
 }
 
-/** World transform of a floor prop placement (yaw about Y, then tipped over about its own X). */
-export function placementMatrix(p: PropPlacement): THREE.Matrix4 {
-  const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(p.tilt, p.yaw, 0, 'YXZ'));
-  return new THREE.Matrix4().compose(new THREE.Vector3(p.x, p.y, p.z), q, new THREE.Vector3(1, 1, 1));
+/** A normalised model's size (metres): width (x), height (y), depth (z). */
+export interface ModelSize {
+  w: number;
+  h: number;
+  d: number;
+}
+
+/**
+ * World transform of a floor prop placement. Upright: turned by its yaw, standing at (x, y, z).
+ * Knocked over: laid on its back — rotated about its own X, then lifted by half its depth and
+ * centred — so it rests on the floor instead of sinking into it.
+ */
+export function placementMatrix(p: PropPlacement, size: ModelSize): THREE.Matrix4 {
+  const m = new THREE.Matrix4().makeTranslation(p.x, p.y, p.z).multiply(new THREE.Matrix4().makeRotationY(p.yaw));
+  if (p.tilt === 0) return m;
+  return m.multiply(new THREE.Matrix4().makeTranslation(0, size.d / 2, -size.h / 2)).multiply(new THREE.Matrix4().makeRotationX(p.tilt));
 }
 
 /**
