@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { doorHeaders, HEADER_BOTTOM, headroomAt } from '../../src/world/headers';
+import { ARCH_SPRING, archDoorways, doorHeaders, HEADER_BOTTOM, headroomAt } from '../../src/world/headers';
+import { archAxis } from '../../src/world/solids';
 import { Cell, createGrid, setCell, WALL_HEIGHT } from '../../src/world/grid';
 
 /** Two rooms (above/below) split by a wall on row 5, with openings cut into it. */
@@ -70,5 +71,23 @@ describe('headroomAt', () => {
     expect(headroomAt(g, 9, 11.3, 0.4)).toBe(HEADER_BOTTOM); // entering: its body is already under it
     expect(headroomAt(g, 9, 4, 0.4)).toBe(WALL_HEIGHT);
     expect(headroomAt(g, 13, 16, 0.4)).toBe(WALL_HEIGHT);
+  });
+});
+
+describe('arch doorways (visual)', () => {
+  it('gets an arch instead of a flat header, and the Howler knows its headroom', () => {
+    // Find a one-cell doorway that is an arch.
+    let g = wallWithOpenings([2]);
+    let x = 2;
+    for (; x <= 16 && !archAxis(g, x, 5); x++) g = wallWithOpenings([x + 1]);
+    expect(archAxis(g, x, 5)).not.toBe(null);
+    expect(doorHeaders(g, 0, 0, 20)).toHaveLength(0);
+    const arches = archDoorways(g, 0, 0, 20);
+    expect(arches).toHaveLength(1);
+    expect(arches[0]).toMatchObject({ x, y: 5, axis: 'x' });
+    const cx = x * 2 + 1;
+    const hr = headroomAt(g, cx, 11, 0.3);
+    expect(hr).toBeGreaterThan(ARCH_SPRING);
+    expect(hr).toBeLessThan(WALL_HEIGHT);
   });
 });

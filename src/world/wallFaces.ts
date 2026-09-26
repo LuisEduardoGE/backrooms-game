@@ -133,6 +133,8 @@ export interface OutletSpot {
   z: number;
   nx: number;
   nz: number;
+  /** Height of the fixture's centre, when the placer decides it. */
+  y?: number;
 }
 
 /** Metres of wall per outlet on average ("scattered electrical outlets", as in the original photo). */
@@ -145,30 +147,56 @@ function hash01(a: number, b: number): number {
 }
 
 /**
- * Evenly scattered spots along wall faces: about one per `every` metres of wall, only on faces at
- * least 1.2 m long, never within 15 % of a face's ends. Deterministic from the faces' positions;
- * `salt` keeps different fixtures from landing on the same spots.
+ * Spots scattered along wall faces the way real fixtures are — irregularly. Each face is bare,
+ * sparse or busy (so some walls have none and others several); the count is random around that
+ * (averaging one per `every` metres overall); positions are random along the face, sometimes in a
+ * close pair; never within 10 % of a face's ends or closer than 25 cm to each other. Faces under
+ * 1.2 m get nothing. Deterministic from the faces' positions; `salt` keeps different fixtures
+ * from landing on the same spots.
  */
 export function spotsAlong(quads: readonly WallQuad[], every: number, salt = 0): OutletSpot[] {
   const spots: OutletSpot[] = [];
   for (const q of quads) {
     const len = Math.hypot(q.x1 - q.x0, q.z1 - q.z0);
     if (len < 1.2) continue;
-    const r = hash01(q.x0 + q.x1 + salt, q.z0 + q.z1 - salt);
-    const expected = len / every;
-    const n = Math.floor(expected) + (r < expected - Math.floor(expected) ? 1 : 0);
-    for (let k = 0; k < n; k++) {
-      const jitter = (hash01(q.x0 + k * 7.3 + salt, q.z1 - k * 3.1) - 0.5) * (0.5 / n);
-      const t = Math.min(0.85, Math.max(0.15, (k + 0.5) / n + jitter));
+    let n = 0;
+    const next = () => hash01(q.x0 * 3.1 + q.x1 + salt * 1.7 + n * 13.7, q.z0 + q.z1 * 2.3 - salt + n++ * 5.3);
+    const busy = next();
+    const mult = busy < 0.45 ? 0 : busy < 0.8 ? 0.8 : 2.2;
+    // Poisson count with mean len / every × mult (inverse transform).
+    const mean = (len / every) * mult;
+    let count = 0;
+    for (let p = Math.exp(-mean), cum = p, u = next(); u > cum && count < 12; ) {
+      count++;
+      p *= mean / count;
+      cum += p;
+    }
+    const ts: number[] = [];
+    for (let k = 0; k < count; k++) {
+      const t = 0.1 + next() * 0.8;
+      ts.push(t);
+      if (next() < 0.25) ts.push(Math.min(0.9, t + 0.3 / len)); // a close pair (double outlet)
+    }
+    ts.sort((a, b) => a - b);
+    let last = -Infinity;
+    for (const t of ts) {
+      if ((t - last) * len < 0.25) continue;
+      last = t;
       spots.push({ quad: q, x: q.x0 + (q.x1 - q.x0) * t, z: q.z0 + (q.z1 - q.z0) * t, nx: q.nx, nz: q.nz });
     }
   }
   return spots;
 }
 
-/** Where electrical outlets sit ("scattered electrical outlets", as in the original photo). */
+/**
+ * Where electrical outlets sit ("scattered electrical outlets", as in the original photo): mostly
+ * sockets low on the wall at slightly varying heights, some light switches at hand height.
+ */
 export function outletSpots(quads: readonly WallQuad[]): OutletSpot[] {
-  return spotsAlong(quads, OUTLET_EVERY);
+  return spotsAlong(quads, OUTLET_EVERY).map((s) => {
+    const r = hash01(s.x * 7.7, s.z * 3.3);
+    return { ...s, y: r < 0.15 ? 1.1 + r : 0.24 + r * 0.2 };
+  });
 }
 
 export type Paper = 'chevron' | 'dots' | 'stained';

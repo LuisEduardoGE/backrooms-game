@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Cell, createGrid, type Grid, PILLAR_SIZE, setCell } from '../../src/world/grid';
+import { generateLevel } from '../../src/world/generator';
 import { solidRects, WALL_THICKNESS } from '../../src/world/solids';
 import { faceStyle, outletSpots, type WallQuad, wallQuads } from '../../src/world/wallFaces';
 
@@ -123,8 +124,8 @@ describe('outletSpots', () => {
       const len = Math.hypot(q.x1 - q.x0, q.z1 - q.z0);
       expect(len).toBeGreaterThanOrEqual(1.2);
       const t = ((s.x - q.x0) * (q.x1 - q.x0) + (s.z - q.z0) * (q.z1 - q.z0)) / (len * len);
-      expect(t).toBeGreaterThanOrEqual(0.15);
-      expect(t).toBeLessThanOrEqual(0.85);
+      expect(t).toBeGreaterThanOrEqual(0.1);
+      expect(t).toBeLessThanOrEqual(0.9);
       expect([s.nx, s.nz]).toEqual([q.nx, q.nz]);
     }
   });
@@ -188,5 +189,41 @@ describe('faceStyle', () => {
     expect(column).toHaveLength(4);
     const papers = new Set(column.map((q) => faceStyle(g, q).paper));
     expect(papers.size).toBe(1);
+  });
+});
+
+describe('wall items are scattered, not patterned', () => {
+  // Real level walls, one chunk band, so the numbers mean something.
+  const level = generateLevel(42);
+  const quads = [0, 1, 2, 3, 4, 5].flatMap((cx) => [0, 1, 2, 3, 4, 5].flatMap((cy) => wallQuads(level.grid, cx, cy, 16)));
+  const spots = outletSpots(quads);
+
+  it('spaces outlets irregularly along a wall (gaps vary a lot, not a ruler)', () => {
+    const gaps: number[] = [];
+    const byFace = new Map<WallQuad, typeof spots>();
+    for (const s of spots) (byFace.get(s.quad) ?? byFace.set(s.quad, []).get(s.quad)!).push(s);
+    for (const [q, list] of byFace) {
+      if (list.length < 2) continue;
+      const t = list.map((s) => Math.hypot(s.x - q.x0, s.z - q.z0)).sort((a, b) => a - b);
+      for (let i = 1; i < t.length; i++) gaps.push(t[i] - t[i - 1]);
+    }
+    const mean = gaps.reduce((a, b) => a + b, 0) / gaps.length;
+    const sd = Math.sqrt(gaps.reduce((a, b) => a + (b - mean) ** 2, 0) / gaps.length);
+    expect(gaps.length).toBeGreaterThan(10);
+    expect(sd / mean).toBeGreaterThan(0.5);
+  });
+
+  it('leaves many long walls bare while others get several', () => {
+    const long = quads.filter((q) => Math.hypot(q.x1 - q.x0, q.z1 - q.z0) >= 4);
+    const counts = long.map((q) => spots.filter((s) => s.quad === q).length);
+    const bare = counts.filter((c) => c === 0).length / counts.length;
+    expect(bare).toBeGreaterThan(0.3);
+    expect(bare).toBeLessThan(0.8);
+    expect(Math.max(...counts)).toBeGreaterThanOrEqual(3);
+  });
+
+  it('hangs outlets at more than one height (sockets low, a few switches higher)', () => {
+    const heights = new Set(spots.map((s) => Math.round((s.y ?? 0) * 10)));
+    expect(heights.size).toBeGreaterThanOrEqual(3);
   });
 });

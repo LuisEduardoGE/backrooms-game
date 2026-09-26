@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { moveWithCollision, PLAYER_RADIUS } from '../../src/player/collision';
 import { Cell, createGrid, PILLAR_SIZE, setCell } from '../../src/world/grid';
-import { WALL_THICKNESS } from '../../src/world/solids';
+import { archAxis, WALL_THICKNESS } from '../../src/world/solids';
 
 /** Thin walls: the border slab faces sit 0.9 m inside the wall cells (x = 1.1 and 8.9 for room(5)). */
 const FAR_FACE = 9 - WALL_THICKNESS / 2;
@@ -58,5 +58,36 @@ describe('moveWithCollision', () => {
     expect(stopped.x).toBeCloseTo(7 - PLAYER_RADIUS, 3);
     // Without the desk the same move goes straight through.
     expect(moveWithCollision(g, { x: 5, z: 7 }, 2.5, 0).x).toBeCloseTo(7.5, 5);
+  });
+
+  it('lets you walk through an arch but not through the wall beside its opening', () => {
+    // Two rooms split by a wall on row 5; find a doorway position that is an arch.
+    const make = (dx: number) => {
+      const g = createGrid(14, 11);
+      for (let y = 1; y <= 9; y++) {
+        for (let x = 1; x <= 12; x++) {
+          if (y === 5) continue;
+          setCell(g, x, y, Cell.Floor);
+          g.room[y * 14 + x] = y < 5 ? 0 : 1;
+        }
+      }
+      setCell(g, dx, 5, Cell.Floor);
+      return g;
+    };
+    let dx = 2;
+    while (dx < 12 && !archAxis(make(dx), dx, 5)) dx++;
+    const g = make(dx);
+    expect(archAxis(g, dx, 5)).toBe('x');
+    const mx = dx * 2 + 1;
+    // Walk as the game does: many small fixed steps (a sprint is ~6 cm per 60 Hz step).
+    const walk = (x: number) => {
+      let p = { x, z: 8 };
+      for (let i = 0; i < 120; i++) p = moveWithCollision(g, p, 0, 0.05);
+      return p.z;
+    };
+    // Straight through the middle: clear, out the other side.
+    expect(walk(mx)).toBeCloseTo(14, 5);
+    // 0.9 m to the side (inside the doorway cell, outside the 1.3 m opening): stopped at the wall.
+    expect(walk(mx + 0.9)).toBeLessThan(11);
   });
 });

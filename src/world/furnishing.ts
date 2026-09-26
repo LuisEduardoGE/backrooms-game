@@ -17,7 +17,8 @@ export type PropKind =
   | 'sofa'
   | 'tv';
 
-export type Theme = 'office' | 'chairPile' | 'storage' | 'maintenance' | 'household';
+/** `stray`: one or two lone objects left in an otherwise empty room (out-of-place, Level 0 canon). */
+export type Theme = 'office' | 'chairPile' | 'storage' | 'maintenance' | 'household' | 'stray';
 
 export interface PropPlacement {
   kind: PropKind;
@@ -59,13 +60,18 @@ const SIZE: Record<PropKind, [number, number]> = {
 const HEIGHT: Partial<Record<PropKind, number>> = { box: 0.34, crate: 0.26, schoolDesk: 0.72, desk: 0.79 };
 
 const THEMES: readonly [Theme | null, number][] = [
-  [null, 0.4],
-  ['office', 0.17],
-  ['storage', 0.15],
-  ['chairPile', 0.1],
+  [null, 0.32],
+  ['office', 0.15],
+  ['stray', 0.15],
+  ['storage', 0.13],
   ['maintenance', 0.1],
-  ['household', 0.08],
+  ['chairPile', 0.08],
+  ['household', 0.07],
 ];
+/** Closest two upright pieces of a heap may stand (metres). */
+const MIN_APART = 0.5;
+/** How far (radians) a prop against a wall may sit askew — nothing in an abandoned office is square. */
+const ASKEW = 0.14;
 
 function hash(a: number, b: number, salt: number): number {
   let h = Math.imul(a, 374761393) ^ Math.imul(b, 668265263) ^ Math.imul(salt, 2246822519);
@@ -186,7 +192,7 @@ class Placer {
     const z = cellToWorld(s.y) + step.y * off;
     const alongX = s.dir === 'N' || s.dir === 'S';
     this.anchor = { x: s.x, y: s.y };
-    this.add(kind, x, z, FACING[s.dir], collides ? rectAround(x, z, w, d, alongX) : null);
+    this.add(kind, x, z, FACING[s.dir] + this.rnd.range(-ASKEW, ASKEW), collides ? rectAround(x, z, w, d, alongX) : null);
     this.mark(s.x, s.y);
     return { x, z, dir: s.dir };
   }
@@ -210,7 +216,8 @@ class Placer {
       this.anchor = { x: cx, y: cz };
     }
     const [w, d] = SIZE[kind];
-    const yaw = FACING[at.dir] + (facingWall ? Math.PI : 0);
+    // Pushed out and turned as whoever used it left it.
+    const yaw = FACING[at.dir] + (facingWall ? Math.PI : 0) + this.rnd.range(-0.7, 0.7);
     this.add(kind, x, z, yaw, collides ? rectAround(x, z, w, d, at.dir === 'N' || at.dir === 'S') : null);
   }
 
@@ -233,14 +240,25 @@ class Placer {
     const cx = cellToWorld(at.x);
     const cz = cellToWorld(at.y);
     this.anchor = { x: at.x, y: at.y };
+    // Upright pieces keep MIN_APART from each other (a pile, not chairs passing through each other);
+    // knocked-over ones may tangle. A piece that finds no room after a few tries is left out.
+    const upright: { x: number; z: number }[] = [];
+    const before = this.out.length;
     for (let i = 0; i < n; i++) {
-      const a = this.rnd.range(0, Math.PI * 2);
-      const r = Math.sqrt(this.rnd.next()) * radius;
       const kind = this.rnd.pick(kinds);
       const tipped = this.rnd.next() < tipChance;
-      this.add(kind, cx + Math.cos(a) * r, cz + Math.sin(a) * r, this.rnd.range(0, Math.PI * 2), null, tipped ? 0.22 : 0, tipped ? Math.PI / 2 : 0);
+      for (let attempt = 0; attempt < 10; attempt++) {
+        const a = this.rnd.range(0, Math.PI * 2);
+        const r = Math.sqrt(this.rnd.next()) * radius;
+        const x = cx + Math.cos(a) * r;
+        const z = cz + Math.sin(a) * r;
+        if (!tipped && upright.some((u) => Math.hypot(u.x - x, u.z - z) < MIN_APART)) continue;
+        if (!tipped) upright.push({ x, z });
+        this.add(kind, x, z, this.rnd.range(0, Math.PI * 2), null, tipped ? 0.22 : 0, tipped ? Math.PI / 2 : 0);
+        break;
+      }
     }
-    if (collides) {
+    if (collides && this.out.length > before) {
       // The heap's collider rides on its last prop; it fits inside the centre cell.
       const half = Math.min(radius + 0.25, CELL_SIZE / 2 - 0.05);
       this.out[this.out.length - 1].collide = { minX: cx - half, maxX: cx + half, minZ: cz - half, maxZ: cz + half };
@@ -249,45 +267,87 @@ class Placer {
   }
 }
 
+/** A random count in [lo, hi]. */
+const between = (p: Placer, lo: number, hi: number) => lo + Math.floor(p.random.next() * (hi - lo + 1));
+const chance = (p: Placer, c: number) => p.random.next() < c;
+
+/**
+ * Each theme is a loose recipe, not a fixed arrangement: counts, which pieces appear and where
+ * they end up are all random, so two offices (or two storerooms) never hold the same set.
+ */
 const FURNISH: Record<Theme, (p: Placer) => void> = {
   office(p) {
-    const desks = p.random.next() < 0.5 ? 1 : 2;
-    for (let i = 0; i < desks; i++) {
-      const desk = p.againstWall(p.random.next() < 0.7 ? 'desk' : 'schoolDesk');
+    for (let i = between(p, 1, 3); i > 0; i--) {
+      const kind = chance(p, 0.65) ? 'desk' : 'schoolDesk';
+      const desk = p.againstWall(kind);
       if (!desk) break;
-      if (p.random.next() < 0.8) p.inFront(p.random.pick(['schoolChair', 'monobloc'] as const), desk, 0.7, true);
+      // Whatever was left on the desk.
+      if (chance(p, 0.25)) p.stack('tv', desk.x, desk.z, kind, p.random.range(-0.5, 0.5));
+      else if (chance(p, 0.3)) p.stack('box', desk.x, desk.z, kind, p.random.range(-0.6, 0.6));
+      if (chance(p, 0.6)) p.inFront(p.random.pick(['schoolChair', 'monobloc', 'schoolChair'] as const), desk, p.random.range(0.55, 1.1), true);
     }
-    if (p.random.next() < 0.5) p.againstWall('armchair');
+    // Chairs left wherever.
+    for (let i = between(p, 0, 2); i > 0; i--) {
+      const at = p.openCentre();
+      if (!at) break;
+      p.cluster(at, [p.random.pick(['schoolChair', 'monobloc'] as const)], 1, 0.3, chance(p, 0.25) ? 1 : 0);
+    }
+    if (chance(p, 0.3)) p.againstWall('armchair');
+    if (chance(p, 0.3)) p.againstWall(chance(p, 0.5) ? 'box' : 'crate');
+    if (chance(p, 0.25)) p.againstWall('shelves');
   },
   chairPile(p) {
     const at = p.openCentre();
-    if (at) p.cluster(at, ['monobloc', 'schoolChair', 'monobloc', 'armchair'], 5 + Math.floor(p.random.next() * 5), 0.75, 0.35);
+    if (at) p.cluster(at, ['monobloc', 'schoolChair', 'monobloc', 'armchair'], between(p, 4, 10), p.random.range(0.5, 0.8), p.random.range(0.2, 0.5));
+    if (chance(p, 0.4)) p.againstWall(p.random.pick(['monobloc', 'schoolChair'] as const));
   },
   storage(p) {
-    const shelves = 1 + Math.floor(p.random.next() * 2);
-    for (let i = 0; i < shelves; i++) p.againstWall('shelves');
-    const stacks = 2 + Math.floor(p.random.next() * 3);
-    for (let i = 0; i < stacks; i++) {
-      const kind = p.random.next() < 0.7 ? 'box' : 'crate';
+    for (let i = between(p, 0, 2); i > 0; i--) p.againstWall('shelves');
+    for (let i = between(p, 1, 5); i > 0; i--) {
+      const kind = chance(p, 0.65) ? 'box' : 'crate';
       const base = p.againstWall(kind);
       if (!base) break;
-      const yaw = Math.round(p.random.range(-1, 1) * 10) / 40;
-      if (p.random.next() < 0.6) p.stack(kind, base.x, base.z, kind, yaw);
+      if (chance(p, 0.55)) p.stack(kind, base.x, base.z, kind, p.random.range(-0.4, 0.4));
     }
+    if (chance(p, 0.25)) p.againstWall('ladder');
   },
   maintenance(p) {
-    p.againstWall('ladder');
-    const signs = 1 + Math.floor(p.random.next() * 2);
-    for (let i = 0; i < signs; i++) {
+    for (let i = between(p, 0, 2); i > 0; i--) p.againstWall('ladder');
+    for (let i = between(p, 1, 4); i > 0; i--) {
       const at = p.openCentre();
       if (!at) break;
       p.cluster(at, ['wetFloor'], 1, 0.05, 0);
     }
-    if (p.random.next() < 0.6) p.againstWall('box');
+    for (let i = between(p, 0, 3); i > 0; i--) {
+      const kind = chance(p, 0.5) ? 'box' : 'crate';
+      const base = p.againstWall(kind);
+      if (base && chance(p, 0.4)) p.stack(kind, base.x, base.z, kind, p.random.range(-0.4, 0.4));
+    }
+    if (chance(p, 0.3)) p.againstWall('shelves');
+    if (chance(p, 0.3)) p.againstWall(p.random.pick(['monobloc', 'schoolChair'] as const));
   },
   household(p) {
-    const sofa = p.againstWall('sofa');
-    if (sofa) p.inFront('tv', sofa, 2.2, true);
-    else p.againstWall('armchair');
+    const seat = p.againstWall(chance(p, 0.6) ? 'sofa' : 'armchair');
+    if (seat && chance(p, 0.5)) p.inFront('tv', seat, p.random.range(1.6, 2.6), true);
+    else if (chance(p, 0.5)) {
+      // The TV propped on whatever was to hand.
+      const stand = chance(p, 0.5) ? 'crate' : 'box';
+      const base = p.againstWall(stand);
+      if (base) p.stack('tv', base.x, base.z, stand, p.random.range(-0.5, 0.5));
+    }
+    for (let i = between(p, 0, 2); i > 0; i--) p.againstWall(p.random.pick(['armchair', 'monobloc', 'schoolChair', 'sofa'] as const));
+    if (chance(p, 0.3)) p.againstWall('shelves');
+    if (chance(p, 0.3)) {
+      const at = p.openCentre();
+      if (at) p.cluster(at, [p.random.pick(['monobloc', 'schoolChair', 'box'] as const)], 1, 0.3, chance(p, 0.3) ? 1 : 0);
+    }
+  },
+  stray(p) {
+    for (let i = between(p, 1, 2); i > 0; i--) {
+      const at = p.openCentre();
+      if (!at) break;
+      const kind = p.random.pick(['schoolChair', 'monobloc', 'box', 'crate', 'wetFloor', 'armchair', 'tv', 'monobloc'] as const);
+      p.cluster(at, [kind], 1, 0.15, chance(p, 0.2) ? 1 : 0);
+    }
   },
 };
