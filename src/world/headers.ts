@@ -65,3 +65,21 @@ function countRun(grid: Grid, x: number, y: number, dx: number, dy: number): num
   while (floor(grid, x + dx * n, y + dy * n)) n++;
   return n;
 }
+
+/**
+ * Clear height (metres) for something of `radius` standing at (wx, wz): the doorway header's
+ * underside if its footprint touches one, else the ceiling. Looks only at the cells around it.
+ */
+export function headroomAt(grid: Grid, wx: number, wz: number, radius: number): number {
+  const cx = Math.floor(wx / 2);
+  const cz = Math.floor(wz / 2);
+  // Headers belong to their first opening cell, which can be up to MAX_OPENING cells back.
+  for (let y = cz - MAX_OPENING; y <= cz + 1; y++) {
+    for (let x = cx - MAX_OPENING; x <= cx + 1; x++) {
+      for (const h of doorHeaders(grid, x, y, 1)) {
+        if (wx + radius > h.minX && wx - radius < h.maxX && wz + radius > h.minZ && wz - radius < h.maxZ) return h.y0;
+      }
+    }
+  }
+  return WALL_HEIGHT;
+}

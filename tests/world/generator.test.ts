@@ -255,3 +255,85 @@ describe('segmented walls', () => {
     for (let x = 1; x <= 24; x++) expect(getCell(g, x, 7)).toBe(Cell.Wall);
   });
 });
+
+describe('openness (tuned 2026-09-26)', () => {
+  /** Wall pieces vs openings along wall lines between different halls, exits per room, sightlines. */
+  function measure(seed: number) {
+    const { grid, rooms } = generateLevel(seed);
+    const W = grid.width;
+    const c = (x: number, y: number) => grid.cells[y * W + x];
+    const walls: number[] = [];
+    const gaps: number[] = [];
+    for (let y = 1; y < grid.height - 1; y++) {
+      let kind = -1;
+      let len = 0;
+      const flush = () => {
+        if (len) (kind === 1 ? walls : gaps).push(len);
+        len = 0;
+      };
+      for (let x = 1; x < W - 1; x++) {
+        const a = grid.room[(y - 1) * W + x];
+        const b = grid.room[(y + 1) * W + x];
+        const line = a >= 0 && b >= 0 && a !== b && grid.zone[(y - 1) * W + x] !== grid.zone[(y + 1) * W + x];
+        if (!line) {
+          flush();
+          kind = -1;
+          continue;
+        }
+        const k = c(x, y) === Cell.Wall ? 1 : 0;
+        if (k !== kind) {
+          flush();
+          kind = k;
+        }
+        len++;
+      }
+      flush();
+    }
+    const exits = new Map<number, Set<number>>();
+    const link = (a: number, b: number) => {
+      if (a < 0 || b < 0 || a === b) return;
+      (exits.get(a) ?? exits.set(a, new Set()).get(a)!).add(b);
+      (exits.get(b) ?? exits.set(b, new Set()).get(b)!).add(a);
+    };
+    for (let y = 1; y < grid.height - 1; y++) {
+      for (let x = 1; x < W - 1; x++) {
+        if (c(x, y) !== Cell.Floor || grid.room[y * W + x] >= 0) continue;
+        link(grid.room[y * W + x - 1], grid.room[y * W + x + 1]);
+        link(grid.room[(y - 1) * W + x], grid.room[(y + 1) * W + x]);
+      }
+    }
+    const sight: number[] = [];
+    for (let i = 0; i < grid.cells.length; i += 7) {
+      if (grid.cells[i] !== Cell.Floor) continue;
+      const x0 = i % W;
+      const y0 = (i - x0) / W;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        let n = 0;
+        while (c(x0 + dx * (n + 1), y0 + dy * (n + 1)) === Cell.Floor) n++;
+        sight.push(n * 2);
+      }
+    }
+    const sorted = (a: number[]) => [...a].sort((p, q) => p - q);
+    return {
+      wall: sorted(walls)[walls.length >> 1],
+      gap: sorted(gaps)[gaps.length >> 1],
+      twoExits: rooms.filter((r) => (exits.get(r.id)?.size ?? 0) >= 2).length / rooms.length,
+      farSight: sorted(sight)[Math.floor(sight.length * 0.9)],
+    };
+  }
+
+  it('walls read as walls: pieces between openings are at least twice as long as the openings', () => {
+    for (const seed of [7, 42]) {
+      const m = measure(seed);
+      expect(m.wall).toBeGreaterThanOrEqual(2 * m.gap);
+    }
+  });
+
+  it('stays a maze you can move through: 90 %+ of rooms have two or more exits, with long sightlines', () => {
+    for (const seed of [7, 42]) {
+      const m = measure(seed);
+      expect(m.twoExits).toBeGreaterThanOrEqual(0.9);
+      expect(m.farSight).toBeGreaterThanOrEqual(20);
+    }
+  });
+});

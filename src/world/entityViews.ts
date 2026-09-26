@@ -36,9 +36,15 @@ interface HowlerRig {
   body: THREE.Group;
   phase: number;
   skin: THREE.MeshStandardMaterial;
+  /** 1 = standing tall; lower = stooped to fit under a doorway header. */
+  stoop: number;
 }
 
 const SKIN = 0x1b1714;
+/** Top of the Howler's head (metres) when standing tall. */
+export const HOWLER_HEIGHT = 2.5;
+/** Clearance kept under a header while stooping. */
+const DUCK_MARGIN = 0.1;
 
 /** A 2.45 m, too-thin figure built from primitives, hunched to clear the 2.7 m ceiling. */
 function createHowler(): HowlerRig {
@@ -79,7 +85,7 @@ function createHowler(): HowlerRig {
     limb(0.05, 0.035, 1.35, new THREE.Vector3(-0.1, 1.35, 0)),
     limb(0.05, 0.035, 1.35, new THREE.Vector3(0.1, 1.35, 0)),
   ];
-  return { root, legs, arms, body, phase: 0, skin };
+  return { root, legs, arms, body, phase: 0, skin, stoop: 1 };
 }
 
 export function createEntityViews(scene: THREE.Scene) {
@@ -94,7 +100,18 @@ export function createEntityViews(scene: THREE.Scene) {
 
   return {
     /** `shade(x, z)`: baked light at a point — the level's surfaces carry it, so the Howler must too. */
-    sync(entities: readonly Entity[], alpha: number, dt: number, animate: boolean, shade: (x: number, z: number) => number = () => 1): void {
+    /**
+     * `headroom(x, z)`: clear height where the Howler stands (doorway headers are lower than the
+     * ceiling) — it stoops to squeeze under them instead of clipping through.
+     */
+    sync(
+      entities: readonly Entity[],
+      alpha: number,
+      dt: number,
+      animate: boolean,
+      shade: (x: number, z: number) => number = () => 1,
+      headroom: (x: number, z: number) => number = () => Infinity,
+    ): void {
       for (const e of entities) {
         const x = e.prevPos.x + (e.pos.x - e.prevPos.x) * alpha;
         const z = e.prevPos.z + (e.pos.z - e.prevPos.z) * alpha;
@@ -129,6 +146,12 @@ export function createEntityViews(scene: THREE.Scene) {
           h.arms[0].rotation.x = -swing * 0.7;
           h.arms[1].rotation.x = swing * 0.7;
           h.body.position.y = Math.abs(Math.sin(h.phase)) * 0.04;
+          // Stoop: sink and lean forward to fit under a header, easing back up once through.
+          const want = Math.min(1, (headroom(x, z) - DUCK_MARGIN) / HOWLER_HEIGHT);
+          h.stoop += (want - h.stoop) * Math.min(1, dt * 12);
+          const bend = 1 - h.stoop;
+          h.root.scale.set(1, h.stoop, 1);
+          h.body.rotation.x = -bend * 0.9;
         }
       }
     },

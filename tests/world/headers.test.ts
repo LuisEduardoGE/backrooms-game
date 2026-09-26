@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { doorHeaders, HEADER_BOTTOM } from '../../src/world/headers';
+import { doorHeaders, HEADER_BOTTOM, headroomAt } from '../../src/world/headers';
 import { Cell, createGrid, setCell, WALL_HEIGHT } from '../../src/world/grid';
 
 /** Two rooms (above/below) split by a wall on row 5, with openings cut into it. */
@@ -59,5 +59,16 @@ describe('doorHeaders', () => {
     // The two rooms were merged into one hall: every floor cell, including the carved gaps, shares a zone.
     for (let i = 0; i < g.cells.length; i++) if (g.cells[i] === Cell.Floor) g.zone[i] = 0;
     expect(doorHeaders(g, 0, 0, 20)).toHaveLength(0);
+  });
+});
+
+describe('headroomAt', () => {
+  it('is the full ceiling height in a room and the header height under a doorway (and just around it)', () => {
+    const g = wallWithOpenings([4]);
+    // Doorway cell (4, 5) is centred at (9, 11).
+    expect(headroomAt(g, 9, 11, 0.4)).toBe(HEADER_BOTTOM);
+    expect(headroomAt(g, 9, 11.3, 0.4)).toBe(HEADER_BOTTOM); // entering: its body is already under it
+    expect(headroomAt(g, 9, 4, 0.4)).toBe(WALL_HEIGHT);
+    expect(headroomAt(g, 13, 16, 0.4)).toBe(WALL_HEIGHT);
   });
 });
