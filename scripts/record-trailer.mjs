@@ -25,7 +25,10 @@ await new Promise((r) => setTimeout(r, 2500));
 const browser = await puppeteer.launch({ executablePath: CHROME, headless: 'new', args: ['--use-angle=d3d11', '--ignore-gpu-blocklist'] });
 const page = await browser.newPage();
 await page.setViewport({ width: 960, height: 540 });
-await page.goto(`http://localhost:${PORT}/?attract&seed=42`, { waitUntil: 'networkidle0' });
+// Wait for the tape to actually be rolling, not for network silence ('networkidle0' proved fragile
+// once the page started streaming 3D models after load).
+await page.goto(`http://localhost:${PORT}/?attract&seed=42`, { waitUntil: 'load', timeout: 60000 });
+await page.waitForFunction(() => document.body.innerText.includes('REC'), { timeout: 60000 });
 await new Promise((r) => setTimeout(r, 1500));
 for (let i = 0; i < 70; i++) {
   await page.screenshot({ path: `${FRAMES}/f${String(i).padStart(3, '0')}.png` });

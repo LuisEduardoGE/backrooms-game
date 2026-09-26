@@ -12,6 +12,34 @@ export interface Rect {
 
 const isWall = (g: Grid, x: number, y: number) => getCell(g, x, y) === Cell.Wall;
 
+/** Clear width (metres) of an arched doorway: a real, narrower opening with the wall either side. */
+export const ARCH_WIDTH = 1.3;
+/** Share of one-cell doorways built as arches. */
+const ARCH_CHANCE = 0.4;
+
+function archHash(x: number, y: number): number {
+  let h = Math.imul(x, 374761393) ^ Math.imul(y, 668265263) ^ 0x2c1b3c6d;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+
+const roomFloor = (g: Grid, x: number, y: number) => getCell(g, x, y) === Cell.Floor && g.room[y * g.width + x] >= 0;
+
+/**
+ * If floor cell (x, y) is an arched doorway, the axis its wall line runs along ('x' or 'z'); else
+ * null. An arch is a one-cell doorway carved into a wall line (wall on both ends, a room on both
+ * sides, no room or merged-hall id of its own), chosen deterministically by position.
+ */
+export function archAxis(g: Grid, x: number, y: number): 'x' | 'z' | null {
+  if (getCell(g, x, y) !== Cell.Floor) return null;
+  const i = y * g.width + x;
+  if (g.room[i] >= 0 || g.zone[i] >= 0) return null;
+  let axis: 'x' | 'z' | null = null;
+  if (isWall(g, x - 1, y) && isWall(g, x + 1, y) && roomFloor(g, x, y - 1) && roomFloor(g, x, y + 1)) axis = 'x';
+  else if (isWall(g, x, y - 1) && isWall(g, x, y + 1) && roomFloor(g, x - 1, y) && roomFloor(g, x + 1, y)) axis = 'z';
+  return axis && archHash(x, y) < ARCH_CHANCE ? axis : null;
+}
+
 /**
  * The solid boxes (world metres, XZ) inside one cell — the single source of truth for collision,
  * line of sight and rendering. A wall cell is a thin slab along each axis where it joins
@@ -26,15 +54,30 @@ export function solidRects(grid: Grid, cx: number, cy: number): Rect[] {
     const inset = (CELL_SIZE - PILLAR_SIZE) / 2;
     return [{ minX: x0 + inset, maxX: x0 + inset + PILLAR_SIZE, minZ: z0 + inset, maxZ: z0 + inset + PILLAR_SIZE }];
   }
-  if (c !== Cell.Wall) return [];
-
   const mx = x0 + CELL_SIZE / 2;
   const mz = z0 + CELL_SIZE / 2;
   const h = WALL_THICKNESS / 2;
-  const n = isWall(grid, cx, cy - 1);
-  const s = isWall(grid, cx, cy + 1);
-  const e = isWall(grid, cx + 1, cy);
-  const w = isWall(grid, cx - 1, cy);
+  if (c !== Cell.Wall) {
+    // An arched doorway: the wall continues either side of a centred ARCH_WIDTH opening.
+    const axis = archAxis(grid, cx, cy);
+    if (!axis) return [];
+    const o = ARCH_WIDTH / 2;
+    return axis === 'x'
+      ? [
+          { minX: x0, maxX: mx - o, minZ: mz - h, maxZ: mz + h },
+          { minX: mx + o, maxX: x0 + CELL_SIZE, minZ: mz - h, maxZ: mz + h },
+        ]
+      : [
+          { minX: mx - h, maxX: mx + h, minZ: z0, maxZ: mz - o },
+          { minX: mx - h, maxX: mx + h, minZ: mz + o, maxZ: z0 + CELL_SIZE },
+        ];
+  }
+
+  // Wall arms reach neighbouring walls — and arched doorways, whose jambs continue the wall line.
+  const n = isWall(grid, cx, cy - 1) || archAxis(grid, cx, cy - 1) === 'z';
+  const s = isWall(grid, cx, cy + 1) || archAxis(grid, cx, cy + 1) === 'z';
+  const e = isWall(grid, cx + 1, cy) || archAxis(grid, cx + 1, cy) === 'x';
+  const w = isWall(grid, cx - 1, cy) || archAxis(grid, cx - 1, cy) === 'x';
   const rects: Rect[] = [];
   if (n || s) rects.push({ minX: mx - h, maxX: mx + h, minZ: n ? z0 : mz - h, maxZ: s ? z0 + CELL_SIZE : mz + h });
   if (e || w) rects.push({ minX: w ? x0 : mx - h, maxX: e ? x0 + CELL_SIZE : mx + h, minZ: mz - h, maxZ: mz + h });

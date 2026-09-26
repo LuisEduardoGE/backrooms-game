@@ -4,7 +4,8 @@ import { contactShadow, type LightField, lightAt } from '../lighting/sample';
 import { CHUNK_CELLS } from './chunks';
 import { CELL_SIZE, cellToWorld, type Grid, isDark, WALL_HEIGHT } from './grid';
 import { ceilingDressing, puddles, wallVents } from './dressing';
-import { doorHeaders, type Header } from './headers';
+import { ARCH_SPRING, type ArchDoorway, archDoorways, doorHeaders, type Header } from './headers';
+import { ARCH_WIDTH, WALL_THICKNESS } from './solids';
 import { CEILING_TILE, type WorldMaterials } from './textures';
 import { faceStyle, type OutletSpot, outletSpots, type Paper, type WallQuad, wallQuads } from './wallFaces';
 
@@ -180,6 +181,82 @@ function addHeader(papers: Record<Paper, Builder>, grid: Grid, light: LightField
   b.vert(h.maxX, h.y0, h.maxZ, 0, -1, 0, h.maxX, h.maxZ, l);
   // Columns run +x, rows +z: unflipped would face down (x̂ × ẑ = −ŷ) — which is what we want.
   b.grid(f, 2, 2);
+}
+
+type V3 = [number, number, number];
+
+/**
+ * One quad (p0 → p1 → p2 → p3 around its edge) facing `n`: the winding is chosen from the geometry,
+ * so it is front-facing whichever way the points were listed. UVs are wallpaper world metres.
+ */
+function facingQuad(b: Builder, p: [V3, V3, V3, V3], n: V3, uv: (q: V3) => [number, number], shade: (q: V3) => number): void {
+  const e1 = [p[1][0] - p[0][0], p[1][1] - p[0][1], p[1][2] - p[0][2]];
+  const e2 = [p[3][0] - p[0][0], p[3][1] - p[0][1], p[3][2] - p[0][2]];
+  const cross = [e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]];
+  const agrees = cross[0] * n[0] + cross[1] * n[1] + cross[2] * n[2] > 0;
+  const first = b.pos.length / 3;
+  for (const q of p) {
+    const [u, v] = uv(q);
+    b.vert(q[0], q[1], q[2], n[0], n[1], n[2], u, v, shade(q));
+  }
+  if (agrees) b.idx.push(first, first + 1, first + 3, first + 1, first + 2, first + 3);
+  else b.idx.push(first, first + 3, first + 1, first + 1, first + 3, first + 2);
+}
+
+/** Segments along an arch's half-circle. */
+const ARCH_STEPS = 18;
+/** The raised molding round the arch: its width on the wall and how far it stands proud. */
+const ARCH_TRIM = { w: 0.07, d: 0.018 };
+
+/**
+ * An arched doorway (like the reference): the papered wall above the opening curving down to it on
+ * both faces (the spandrels), the curved soffit under the arch, and a raised molding round the
+ * curve on both faces. The jambs either side are ordinary wall slabs (solids.ts).
+ */
+function addArch(papers: Record<Paper, Builder>, grid: Grid, light: LightField, a: ArchDoorway): void {
+  const mx = cellToWorld(a.x);
+  const mz = cellToWorld(a.y);
+  const r = ARCH_WIDTH / 2;
+  const h = WALL_THICKNESS / 2;
+  // World point from (along the wall, height, across the wall).
+  const at = (u: number, y: number, w: number): V3 => (a.axis === 'x' ? [mx + u, y, mz + w] : [mx + w, y, mz + u]);
+  const across = (sign: number): V3 => (a.axis === 'x' ? [0, 0, sign] : [sign, 0, 0]);
+  const arc = (i: number, rad: number): [number, number] => {
+    const t = Math.PI - (i / ARCH_STEPS) * Math.PI;
+    return [Math.cos(t) * rad, ARCH_SPRING + Math.sin(t) * rad];
+  };
+  for (const sign of [1, -1]) {
+    const n = across(sign);
+    // Paper and u-mapping as for a wall quad on this face (u runs left→right seen from in front).
+    const [rx, rz] = [n[2], -n[0]];
+    const face: WallQuad = { x0: 0, z0: 0, x1: 0, z1: 0, nx: n[0], nz: n[2], u0: 0, u1: 0 };
+    const p0 = at(-r, 0, sign * h);
+    const p1 = at(r, 0, sign * h);
+    Object.assign(face, { x0: p0[0], z0: p0[2], x1: p1[0], z1: p1[2] });
+    const b = papers[faceStyle(grid, face).paper];
+    const uv = (q: V3): [number, number] => [q[0] * rx + q[2] * rz, q[1]];
+    const shade = (q: V3) => lightAt(grid, light, q[0] + n[0] * 0.06, q[2] + n[2] * 0.06) * wallHeightShade(q[1]);
+    for (let i = 0; i < ARCH_STEPS; i++) {
+      const [u0, y0] = arc(i, r);
+      const [u1, y1] = arc(i + 1, r);
+      // Spandrel strip from the curve up to the ceiling.
+      facingQuad(b, [at(u0, y0, sign * h), at(u1, y1, sign * h), at(u1, WALL_HEIGHT, sign * h), at(u0, WALL_HEIGHT, sign * h)], n, uv, shade);
+      // Molding: a band just outside the curve, standing proud of the wall, and its outer edge.
+      const [o0, q0] = arc(i, r + ARCH_TRIM.w);
+      const [o1, q1] = arc(i + 1, r + ARCH_TRIM.w);
+      const d = sign * (h + ARCH_TRIM.d);
+      facingQuad(b, [at(u0, y0, d), at(u1, y1, d), at(o1, q1, d), at(o0, q0, d)], n, uv, (q) => shade(q) * 1.08);
+      const mid = Math.PI - ((i + 0.5) / ARCH_STEPS) * Math.PI;
+      const out = at(Math.cos(mid), 0, 0);
+      const outN: V3 = [out[0] - mx, Math.sin(mid), out[2] - mz];
+      facingQuad(b, [at(o0, q0, sign * h), at(o1, q1, sign * h), at(o1, q1, d), at(o0, q0, d)], outN, uv, (q) => shade(q) * 0.9);
+      // Soffit: the curved underside of the arch, facing the opening (built once).
+      if (sign === 1) {
+        const inN: V3 = [-(out[0] - mx), -Math.sin(mid), -(out[2] - mz)];
+        facingQuad(b, [at(u0, y0, h), at(u1, y1, h), at(u1, y1, -h), at(u0, y0, -h)], inN, (q) => [(a.axis === 'x' ? q[0] : q[2]) , q[1] + (a.axis === 'x' ? q[2] : q[0])], (q) => shade(q) * 0.85);
+      }
+    }
+  }
 }
 
 /** A thin strip standing proud of the wall between heights y0 and y1: front, top and bottom faces. */
@@ -366,9 +443,10 @@ function outlets(spots: OutletSpot[], grid: Grid, light: LightField, mat: THREE.
   const color = new THREE.Color();
   spots.forEach((s, i) => {
     q.setFromAxisAngle(up, Math.atan2(s.nx, s.nz)); // box +z face → the wall's outward normal
-    m.compose(new THREE.Vector3(s.x + s.nx * (OUTLET.d / 2), OUTLET.y, s.z + s.nz * (OUTLET.d / 2)), q, new THREE.Vector3(1, 1, 1));
+    const y = s.y ?? OUTLET.y;
+    m.compose(new THREE.Vector3(s.x + s.nx * (OUTLET.d / 2), y, s.z + s.nz * (OUTLET.d / 2)), q, new THREE.Vector3(1, 1, 1));
     mesh.setMatrixAt(i, m);
-    mesh.setColorAt(i, color.setScalar(lightAt(grid, light, s.x + s.nx * 0.06, s.z + s.nz * 0.06) * wallHeightShade(OUTLET.y)));
+    mesh.setColorAt(i, color.setScalar(lightAt(grid, light, s.x + s.nx * 0.06, s.z + s.nz * 0.06) * wallHeightShade(s.y ?? OUTLET.y)));
   });
   mesh.instanceMatrix.needsUpdate = true;
   if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
@@ -403,6 +481,7 @@ export function buildChunk(grid: Grid, cx: number, cy: number, mats: WorldMateri
     if (style.rail) addStrip(rails, grid, light, q, RAIL_Y0, RAIL_Y1, RAIL_D);
   }
   for (const h of doorHeaders(grid, cx, cy, CHUNK_CELLS)) addHeader(papers, grid, light, h);
+  for (const a of archDoorways(grid, cx, cy, CHUNK_CELLS)) addArch(papers, grid, light, a);
 
   // Floor and ceiling share one vertex grid: sample light and contact shadow once per point.
   const samples = new Map<number, [number, number]>();

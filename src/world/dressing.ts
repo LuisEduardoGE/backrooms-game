@@ -106,7 +106,7 @@ export interface WallFixture {
 /** Office wall fixtures: a clock about every 30 m of wall, a fire alarm about every 40 m. */
 export function wallFixtures(quads: readonly WallQuad[]): WallFixture[] {
   return [
-    ...spotsAlong(quads, 30, 71).map((spot) => ({ kind: 'clock' as const, spot, y: 2.0 })),
-    ...spotsAlong(quads, 40, 83).map((spot) => ({ kind: 'fireAlarm' as const, spot, y: 1.4 })),
+    ...spotsAlong(quads, 30, 71).map((spot) => ({ kind: 'clock' as const, spot, y: 1.75 + hash(Math.round(spot.x * 10), Math.round(spot.z * 10), 3) * 0.45 })),
+    ...spotsAlong(quads, 40, 83).map((spot) => ({ kind: 'fireAlarm' as const, spot, y: 1.25 + hash(Math.round(spot.x * 10), Math.round(spot.z * 10), 4) * 0.25 })),
   ];
 }

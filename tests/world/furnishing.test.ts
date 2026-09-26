@@ -79,4 +79,51 @@ describe('furnishRooms', () => {
       expect(inside, `${p.kind} (${p.theme}) at ${p.x.toFixed(2)},${p.z.toFixed(2)}`).toBe(true);
     }
   });
+
+  it('varies: rooms of one theme hold different sets of things', () => {
+    const byRoom = new Map<number, PropPlacement[]>();
+    for (const p of props) (byRoom.get(p.room) ?? byRoom.set(p.room, []).get(p.room)!).push(p);
+    const byTheme = new Map<string, string[]>();
+    for (const list of byRoom.values()) {
+      const sig = list.map((p) => p.kind).sort().join(',');
+      (byTheme.get(list[0].theme) ?? byTheme.set(list[0].theme, []).get(list[0].theme)!).push(sig);
+    }
+    for (const [theme, sigs] of byTheme) {
+      // A stray room is one or two lone objects by design — see the next test for its variety.
+      if (sigs.length < 4 || theme === 'stray') continue;
+      expect(new Set(sigs).size / sigs.length, theme).toBeGreaterThanOrEqual(0.5);
+    }
+  });
+
+  it('is not squared off: most props sit a little askew', () => {
+    const askew = props.filter((p) => {
+      const off = Math.abs(((p.yaw % (Math.PI / 2)) + Math.PI / 2) % (Math.PI / 2));
+      return Math.min(off, Math.PI / 2 - off) > 0.03;
+    }).length;
+    expect(askew / props.length).toBeGreaterThan(0.5);
+  });
+
+  it('leaves stray objects out of place in some rooms (a lone chair, a box)', () => {
+    expect(props.some((p) => p.theme === 'stray')).toBe(true);
+  });
+
+  it('mixes the stray objects: no single kind makes up most of them', () => {
+    const strays = props.filter((p) => p.theme === 'stray');
+    const counts = new Map<string, number>();
+    for (const p of strays) counts.set(p.kind, (counts.get(p.kind) ?? 0) + 1);
+    expect(counts.size).toBeGreaterThanOrEqual(5);
+    expect(Math.max(...counts.values()) / strays.length).toBeLessThan(0.4);
+  });
+
+  it('keeps upright pieces in a heap apart (a pile, not chairs passing through each other)', () => {
+    const upright = props.filter((p) => p.theme === 'chairPile' && p.tilt === 0);
+    for (let i = 0; i < upright.length; i++) {
+      for (let j = i + 1; j < upright.length; j++) {
+        const a = upright[i];
+        const b = upright[j];
+        if (a.room !== b.room) continue;
+        expect(Math.hypot(a.x - b.x, a.z - b.z)).toBeGreaterThanOrEqual(0.45);
+      }
+    }
+  });
 });

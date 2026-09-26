@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { hasFullFace, solidRects, WALL_THICKNESS } from '../../src/world/solids';
+import { ARCH_WIDTH, archAxis, hasFullFace, solidRects, WALL_THICKNESS } from '../../src/world/solids';
 import { Cell, createGrid, PILLAR_SIZE, setCell } from '../../src/world/grid';
 
 /** 7×7 grid, all floor inside a wall border, so walls can be placed by hand. */
@@ -61,5 +61,63 @@ describe('hasFullFace', () => {
     setCell(h, 4, 2, Cell.Wall); // wall stops at (3,2): only an east arm
     expect(hasFullFace(h, 3, 3, 'N')).toBe(false);
     expect(hasFullFace(open(), 3, 3, 'N')).toBe(false);
+  });
+});
+
+describe('arch doorways', () => {
+  /** Two rooms (rows 1–4 = room 0, rows 6–9 = room 1) split by a wall on row 5 with a doorway at x. */
+  function doorway(x: number) {
+    const g = createGrid(12, 11);
+    for (let y = 1; y <= 9; y++) {
+      for (let cx = 1; cx <= 10; cx++) {
+        if (y === 5) continue;
+        setCell(g, cx, y, Cell.Floor);
+        g.room[y * 12 + cx] = y < 5 ? 0 : 1;
+      }
+    }
+    setCell(g, x, 5, Cell.Floor); // carved: no room, no zone
+    return g;
+  }
+  /** The first arch doorway in the grid, if any. */
+  const findArch = (g: ReturnType<typeof doorway>) => {
+    for (let x = 1; x <= 10; x++) if (archAxis(g, x, 5)) return x;
+    return -1;
+  };
+
+  it('turns some one-cell doorways into arches, deterministically', () => {
+    let arches = 0;
+    for (let x = 2; x <= 9; x++) if (archAxis(doorway(x), x, 5)) arches++;
+    expect(arches).toBeGreaterThan(0);
+    expect(arches).toBeLessThan(8);
+    for (let x = 2; x <= 9; x++) expect(archAxis(doorway(x), x, 5)).toBe(archAxis(doorway(x), x, 5));
+  });
+
+  it('never arches a wide opening or a plain floor cell', () => {
+    const g = doorway(4);
+    setCell(g, 5, 5, Cell.Floor); // now two cells wide
+    expect(archAxis(g, 4, 5)).toBe(null);
+    expect(archAxis(g, 5, 5)).toBe(null);
+    expect(archAxis(g, 4, 3)).toBe(null);
+  });
+
+  it('is solid either side of a centred ARCH_WIDTH opening, joined up with the wall on both sides', () => {
+    let g = doorway(2);
+    let x = findArch(g);
+    for (let i = 2; x < 0 && i <= 9; i++) {
+      g = doorway(i);
+      x = findArch(g);
+    }
+    expect(x).toBeGreaterThan(0);
+    const cx = x * 2 + 1;
+    const jambs = solidRects(g, x, 5);
+    expect(jambs).toHaveLength(2);
+    const [a, b] = [...jambs].sort((p, q) => p.minX - q.minX);
+    expect(a.minX).toBeCloseTo(x * 2, 6);
+    expect(a.maxX).toBeCloseTo(cx - ARCH_WIDTH / 2, 6);
+    expect(b.minX).toBeCloseTo(cx + ARCH_WIDTH / 2, 6);
+    expect(b.maxX).toBeCloseTo(x * 2 + 2, 6);
+    // The wall cells either side now reach all the way to the arch (no gap beside the jambs).
+    expect(Math.max(...solidRects(g, x - 1, 5).map((r) => r.maxX))).toBeCloseTo(x * 2, 6);
+    expect(Math.min(...solidRects(g, x + 1, 5).map((r) => r.minX))).toBeCloseTo(x * 2 + 2, 6);
   });
 });

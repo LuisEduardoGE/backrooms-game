@@ -1,5 +1,8 @@
 import { Cell, cellToWorld, type Grid, getCell, WALL_HEIGHT } from './grid';
-import { WALL_THICKNESS } from './solids';
+import { ARCH_WIDTH, archAxis, WALL_THICKNESS } from './solids';
+
+/** Where an arch's curve starts (metres); it rises a half-circle of ARCH_WIDTH / 2 to its crown. */
+export const ARCH_SPRING = 1.85;
 
 /** Underside of a doorway header (metres): a door-height opening cut into the wall. */
 export const HEADER_BOTTOM = 2.2;
@@ -42,7 +45,7 @@ export function doorHeaders(grid: Grid, cx: number, cy: number, size: number): H
       if (wall(grid, x - 1, y)) {
         let n = 0;
         while (carved(grid, x + n, y) && roomFloor(grid, x + n, y - 1) && roomFloor(grid, x + n, y + 1)) n++;
-        if (n > 0 && n <= MAX_OPENING && wall(grid, x + n, y) && n === countRun(grid, x, y, 1, 0)) {
+        if (n > 0 && n <= MAX_OPENING && wall(grid, x + n, y) && n === countRun(grid, x, y, 1, 0) && !(n === 1 && archAxis(grid, x, y))) {
           out.push({ minX: cellToWorld(x - 1), maxX: cellToWorld(x + n), minZ: cellToWorld(y) - h, maxZ: cellToWorld(y) + h, y0: HEADER_BOTTOM, y1: WALL_HEIGHT, alongX: true });
         }
       }
@@ -50,7 +53,7 @@ export function doorHeaders(grid: Grid, cx: number, cy: number, size: number): H
       if (wall(grid, x, y - 1)) {
         let n = 0;
         while (carved(grid, x, y + n) && roomFloor(grid, x - 1, y + n) && roomFloor(grid, x + 1, y + n)) n++;
-        if (n > 0 && n <= MAX_OPENING && wall(grid, x, y + n) && n === countRun(grid, x, y, 0, 1)) {
+        if (n > 0 && n <= MAX_OPENING && wall(grid, x, y + n) && n === countRun(grid, x, y, 0, 1) && !(n === 1 && archAxis(grid, x, y))) {
           out.push({ minX: cellToWorld(x) - h, maxX: cellToWorld(x) + h, minZ: cellToWorld(y - 1), maxZ: cellToWorld(y + n), y0: HEADER_BOTTOM, y1: WALL_HEIGHT, alongX: false });
         }
       }
@@ -73,6 +76,18 @@ function countRun(grid: Grid, x: number, y: number, dx: number, dy: number): num
 export function headroomAt(grid: Grid, wx: number, wz: number, radius: number): number {
   const cx = Math.floor(wx / 2);
   const cz = Math.floor(wz / 2);
+  // Under an arch: the curve's height at the edge of the footprint (centred in the opening).
+  for (let y = cz - 1; y <= cz + 1; y++) {
+    for (let x = cx - 1; x <= cx + 1; x++) {
+      if (!archAxis(grid, x, y)) continue;
+      const mx = cellToWorld(x);
+      const mz = cellToWorld(y);
+      if (Math.abs(wx - mx) < 1 + radius && Math.abs(wz - mz) < 1 + radius) {
+        const r = ARCH_WIDTH / 2;
+        return ARCH_SPRING + Math.sqrt(Math.max(0, r * r - Math.min(radius, r) ** 2));
+      }
+    }
+  }
   // Headers belong to their first opening cell, which can be up to MAX_OPENING cells back.
   for (let y = cz - MAX_OPENING; y <= cz + 1; y++) {
     for (let x = cx - MAX_OPENING; x <= cx + 1; x++) {
@@ -82,4 +97,23 @@ export function headroomAt(grid: Grid, wx: number, wz: number, radius: number): 
     }
   }
   return WALL_HEIGHT;
+}
+
+/** An arched doorway: its cell and the axis its wall line runs along. */
+export interface ArchDoorway {
+  x: number;
+  y: number;
+  axis: 'x' | 'z';
+}
+
+/** Arched doorways in chunk (cx, cy) (see solids.archAxis). */
+export function archDoorways(grid: Grid, cx: number, cy: number, size: number): ArchDoorway[] {
+  const out: ArchDoorway[] = [];
+  for (let y = cy * size; y < Math.min((cy + 1) * size, grid.height); y++) {
+    for (let x = cx * size; x < Math.min((cx + 1) * size, grid.width); x++) {
+      const axis = archAxis(grid, x, y);
+      if (axis) out.push({ x, y, axis });
+    }
+  }
+  return out;
 }
