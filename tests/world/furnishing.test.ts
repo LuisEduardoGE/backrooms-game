@@ -71,4 +71,12 @@ describe('furnishRooms', () => {
     const d = bfsDistances(walkable, level.start.x, level.start.y);
     for (let i = 0; i < grid.cells.length; i++) if (walkable.cells[i] === Cell.Floor) expect(d[i]).toBeGreaterThanOrEqual(0);
   });
+
+  it('makes every piece of furniture solid: each stands inside a collider (its own, the heap it belongs to, or the one it is stacked on)', () => {
+    const rects = props.flatMap((p) => (p.collide ? [p.collide] : []));
+    for (const p of props) {
+      const inside = rects.some((r) => p.x >= r.minX - 0.05 && p.x <= r.maxX + 0.05 && p.z >= r.minZ - 0.05 && p.z <= r.maxZ + 0.05);
+      expect(inside, `${p.kind} (${p.theme}) at ${p.x.toFixed(2)},${p.z.toFixed(2)}`).toBe(true);
+    }
+  });
 });

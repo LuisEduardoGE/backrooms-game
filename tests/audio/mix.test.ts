@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ECHO_CHANCE, footstepLevel, humLevel, maybeEcho, whisperLevel } from '../../src/audio/mix';
+import { ECHO_CHANCE, footstepLevel, footWetness, humLevel, maybeEcho, whisperLevel } from '../../src/audio/mix';
 import { createRng } from '../../src/core/rng';
 
 describe('humLevel', () => {
@@ -58,5 +58,18 @@ describe('maybeEcho', () => {
       // Facing −z (yaw 0), "behind" is +z.
       expect(e!.z - 10).toBeGreaterThan(0);
     }
+  });
+});
+
+describe('footWetness', () => {
+  it('is damp everywhere (moist carpet), wetter in unpowered zones, soaking in a puddle', () => {
+    const dry = footWetness(false, false);
+    const dark = footWetness(false, true);
+    const puddle = footWetness(true, false);
+    expect(dry).toBeGreaterThan(0.2);
+    expect(dark).toBeGreaterThan(dry);
+    expect(puddle).toBeGreaterThan(dark);
+    expect(puddle).toBeLessThanOrEqual(1);
+    expect(footWetness(true, true)).toBe(puddle);
   });
 });

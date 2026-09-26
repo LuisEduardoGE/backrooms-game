@@ -16,7 +16,8 @@ export interface AudioEngine {
   unlock(): void;
   toggleMute(): boolean;
   setFrame(f: AudioFrame): void;
-  footstep(level: number, sprint: boolean): void;
+  /** `wet` 0..1: how soaked the carpet underfoot is (see mix.footWetness). */
+  footstep(level: number, sprint: boolean, wet: number): void;
   echoStep(x: number, z: number): void;
   howl(): void;
   click(): void;
@@ -56,6 +57,23 @@ export function createAudioEngine(debug: boolean): AudioEngine {
     s.buffer = noise;
     s.loop = loop;
     return s;
+  };
+
+  /** A band of noise with a fast attack and exponential decay, optionally delayed: the parts of a wet step. */
+  const band = (dest: AudioNode, level: number, type: BiquadFilterType, freq: number, q: number, decay: number, delay = 0, sweepTo?: number) => {
+    const t = ctx!.currentTime + delay;
+    const src = noiseSource();
+    const f = ctx!.createBiquadFilter();
+    f.type = type;
+    f.frequency.setValueAtTime(freq, t);
+    if (sweepTo) f.frequency.exponentialRampToValueAtTime(sweepTo, t + decay);
+    f.Q.value = q;
+    const g = ctx!.createGain();
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(level, t + 0.008);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + decay);
+    src.connect(f).connect(g).connect(dest);
+    src.start(t, Math.random() * 1.5, decay + 0.05);
   };
 
   /** A filtered noise burst: carpet thud, heavy step, or static. */
@@ -219,9 +237,16 @@ export function createAudioEngine(debug: boolean): AudioEngine {
         burst(p, 0.9, 180, 0.35);
       }
     },
-    footstep(level, sprint) {
+    footstep(level, sprint, wet) {
       if (!ctx) return;
-      burst(master, Math.min(1, level), sprint ? 800 : 500, sprint ? 0.1 : 0.14);
+      const l = Math.min(1, level);
+      // The foot landing on carpet pile: a soft, low thud.
+      burst(master, l * 0.8, sprint ? 420 : 300, sprint ? 0.09 : 0.12);
+      // Damp carpet: the pile squelches as it's pressed, then sucks back as the foot lifts.
+      band(master, l * wet * 0.55, 'bandpass', 1300, 1.4, 0.14, 0.015, 700);
+      band(master, l * wet * 0.3, 'bandpass', 650, 2, 0.12, sprint ? 0.1 : 0.16, 420);
+      // Standing water: a thin splash on top.
+      if (wet > 0.9) band(master, l * 0.28, 'highpass', 2600, 0.7, 0.1, 0.01);
     },
     echoStep(x, z) {
       if (!ctx) return;

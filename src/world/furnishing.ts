@@ -255,7 +255,7 @@ const FURNISH: Record<Theme, (p: Placer) => void> = {
     for (let i = 0; i < desks; i++) {
       const desk = p.againstWall(p.random.next() < 0.7 ? 'desk' : 'schoolDesk');
       if (!desk) break;
-      if (p.random.next() < 0.8) p.inFront(p.random.pick(['schoolChair', 'monobloc'] as const), desk, 0.7, true, false);
+      if (p.random.next() < 0.8) p.inFront(p.random.pick(['schoolChair', 'monobloc'] as const), desk, 0.7, true);
     }
     if (p.random.next() < 0.5) p.againstWall('armchair');
   },
@@ -276,12 +276,12 @@ const FURNISH: Record<Theme, (p: Placer) => void> = {
     }
   },
   maintenance(p) {
-    p.againstWall('ladder', false);
+    p.againstWall('ladder');
     const signs = 1 + Math.floor(p.random.next() * 2);
     for (let i = 0; i < signs; i++) {
       const at = p.openCentre();
       if (!at) break;
-      p.cluster(at, ['wetFloor'], 1, 0.3, 0, false);
+      p.cluster(at, ['wetFloor'], 1, 0.05, 0);
     }
     if (p.random.next() < 0.6) p.againstWall('box');
   },

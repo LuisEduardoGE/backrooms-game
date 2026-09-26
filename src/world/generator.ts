@@ -39,6 +39,8 @@ export interface GenOptions {
   widenChance: number;
   /** Chance a large room (not a pillar hall) gets structures: partitions, blocks or a colonnade. */
   structureChance: number;
+  /** Openings per 5 cells of long wall between rooms ("randomly segmented rooms", Level 0 canon). */
+  segmentChance: number;
 }
 
 /** Cells between columns in a pillar hall (8 m, like an open-plan office grid). */
@@ -58,6 +60,7 @@ export const DEFAULT_GEN: GenOptions = {
   mergeChance: 0.25,
   widenChance: 0.6,
   structureChance: 0.8,
+  segmentChance: 0.8,
 };
 
 interface Rect {
@@ -463,6 +466,7 @@ function openUp(grid: Grid, rng: Rng, o: GenOptions): void {
   }
   for (let i = 0; i < grid.room.length; i++) if (grid.room[i] >= 0) grid.zone[i] = find(grid.room[i]);
   for (const { cell, room } of carved) grid.zone[cell.y * grid.width + cell.x] = find(room);
+  segmentWalls(grid, rng, o);
   // Widen doorways: a doorway is floor with no room id; grow it along its wall line.
   const doors: Point[] = [];
   for (let y = 1; y < grid.height - 1; y++) {
@@ -540,6 +544,35 @@ function furnish(grid: Grid, rooms: Room[], rng: Rng, o: GenOptions): void {
         for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) cells.push({ x: at.x + x, y: at.y + y });
       }
       if (place(cells, Cell.Wall)) placed++;
+    }
+  }
+}
+
+/**
+ * Level 0 is "randomly segmented rooms, hallways": long walls between two rooms get extra openings
+ * along their length, so a wall reads as a row of segments rather than one partition with a door.
+ * Openings are 1–2 cells, never at a wall's ends or right beside another opening, and only ever
+ * remove wall between two rooms — connectivity can only grow.
+ */
+export function segmentWalls(grid: Grid, rng: Rng, o: GenOptions): void {
+  if (o.segmentChance <= 0) return;
+  for (const cells of separatorsByPair(grid).values()) {
+    // Straight runs of the separator (it may bend where rooms meet at a corner).
+    const horizontal = cells.every((c) => c.y === cells[0].y);
+    const vertical = cells.every((c) => c.x === cells[0].x);
+    if (!horizontal && !vertical) continue;
+    const run = [...cells].sort((a, b) => (horizontal ? a.x - b.x : a.y - b.y));
+    if (run.length < 5) continue;
+    const isOpen = (i: number) => i >= 0 && i < run.length && getCell(grid, run[i].x, run[i].y) === Cell.Floor;
+    for (let i = 1; i < run.length - 1; i++) {
+      if (!rng.chance(o.segmentChance / 5)) continue;
+      const width = rng.chance(0.4) ? 2 : 1;
+      if (i + width > run.length - 1) continue;
+      let clear = true;
+      for (let k = i - 1; k <= i + width; k++) if (isOpen(k)) clear = false;
+      if (!clear) continue;
+      for (let k = i; k < i + width; k++) setCell(grid, run[k].x, run[k].y, Cell.Floor);
+      i += width + 2;
     }
   }
 }
