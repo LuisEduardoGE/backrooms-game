@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { createAudioEngine } from './audio/engine';
-import { footstepLevel, humLevel, maybeEcho, whisperLevel } from './audio/mix';
+import { footstepLevel, footWetness, humLevel, maybeEcho, whisperLevel } from './audio/mix';
 import { nextPhase, type Phase, type PhaseEvent } from './core/gameState';
 import { autopilotInput, createAutopilot } from './game/autopilot';
 import { createInput } from './core/input';
@@ -42,7 +42,7 @@ import { ITEM_COUNTS, type Item, placeItems } from './world/items';
 import { createProps } from './world/props';
 import type { ChunkPanels } from './world/chunkMesh';
 import { CHUNK_CELLS } from './world/chunks';
-import { ceilingDressing, wallFixtures } from './world/dressing';
+import { ceilingDressing, type Puddle, puddles, wallFixtures } from './world/dressing';
 import { createChunkStreamer } from './world/streamer';
 import { furnishRooms, type PropPlacement } from './world/furnishing';
 import { buildPropMeshes, loadPropModels, placementMatrix, type PropInstance } from './world/propModels';
@@ -285,6 +285,20 @@ function updatePanels(timeSec: number, blackout: { x: number; z: number; radius:
  * falls back to a plain lock where unsupported. Rejections (e.g. re-locking within ~1 s of Esc)
  * are swallowed — the next click works.
  */
+/** Damp carpet patches in the player's chunk (refreshed on chunk change), for wet footsteps. */
+let puddleChunk = '';
+let nearbyPuddles: Puddle[] = [];
+function inPuddle(x: number, z: number): boolean {
+  const cx = Math.floor(worldToCell(x) / CHUNK_CELLS);
+  const cy = Math.floor(worldToCell(z) / CHUNK_CELLS);
+  const key = `${cx},${cy}`;
+  if (key !== puddleChunk) {
+    puddleChunk = key;
+    nearbyPuddles = puddles(level.grid, cx, cy, CHUNK_CELLS);
+  }
+  return nearbyPuddles.some((p) => Math.hypot(p.x - x, p.z - z) < p.r);
+}
+
 /** Vents around the player's chunk, refreshed when the player changes chunk. */
 let ventChunk = '';
 let nearbyVents: { x: number; z: number }[] = [];
@@ -484,7 +498,7 @@ renderer.setAnimationLoop((now: number) => {
       const footstep = stepFootsteps(footsteps, FIXED_DT, player.moving, player.gait);
       const noises: NoiseEvent[] = footstep ? [{ x: player.pos.x, z: player.pos.z, radius: footstep }] : [];
       if (footstep !== null) {
-        audio.footstep(footstepLevel(player.gait), player.gait === 'sprint');
+        audio.footstep(footstepLevel(player.gait), player.gait === 'sprint', footWetness(inPuddle(player.pos.x, player.pos.z), isDark(level.grid, worldToCell(player.pos.x), worldToCell(player.pos.z))));
         const echo = maybeEcho(echoRng, footstep, player.pos, player.yaw, distortionFromSanity(sanity.value));
         if (echo) pendingEchoes.push({ at: now + echo.delaySec * 1000, x: echo.x, z: echo.z });
       }

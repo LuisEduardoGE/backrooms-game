@@ -4,6 +4,7 @@ import { contactShadow, type LightField, lightAt } from '../lighting/sample';
 import { CHUNK_CELLS } from './chunks';
 import { CELL_SIZE, cellToWorld, type Grid, isDark, WALL_HEIGHT } from './grid';
 import { ceilingDressing, puddles, wallVents } from './dressing';
+import { doorHeaders, type Header } from './headers';
 import { CEILING_TILE, type WorldMaterials } from './textures';
 import { faceStyle, type OutletSpot, outletSpots, type Paper, type WallQuad, wallQuads } from './wallFaces';
 
@@ -132,12 +133,12 @@ function wallShade([light, corner]: [number, number], y: number): number {
   return light * cornerAO * wallHeightShade(y);
 }
 
-function addWall(b: Builder, grid: Grid, light: LightField, q: WallQuad): void {
+function addWall(b: Builder, grid: Grid, light: LightField, q: WallQuad, rows: readonly number[] = WALL_ROWS): void {
   const len = Math.hypot(q.x1 - q.x0, q.z1 - q.z0);
   const cols = Math.max(1, Math.ceil(len / SEG)) + 1;
   const first = b.pos.length / 3;
   const column = Array.from({ length: cols }, (_, i) => wallColumn(grid, light, q, i / (cols - 1)));
-  for (const y of WALL_ROWS) {
+  for (const y of rows) {
     for (let i = 0; i < cols; i++) {
       const t = i / (cols - 1);
       const x = q.x0 + (q.x1 - q.x0) * t;
@@ -145,7 +146,40 @@ function addWall(b: Builder, grid: Grid, light: LightField, q: WallQuad): void {
       b.vert(x, y, z, q.nx, 0, q.nz, q.u0 + (q.u1 - q.u0) * t, y, wallShade(column[i], y));
     }
   }
-  b.grid(first, cols, WALL_ROWS.length);
+  b.grid(first, cols, rows.length);
+}
+
+/** The two wallpapered sides of a doorway header, as wall quads (left to right seen from in front). */
+function headerSides(h: Header): WallQuad[] {
+  if (h.alongX) {
+    return [
+      { x0: h.minX, z0: h.maxZ, x1: h.maxX, z1: h.maxZ, nx: 0, nz: 1, u0: h.minX, u1: h.maxX },
+      { x0: h.maxX, z0: h.minZ, x1: h.minX, z1: h.minZ, nx: 0, nz: -1, u0: -h.maxX, u1: -h.minX },
+    ];
+  }
+  return [
+    { x0: h.maxX, z0: h.maxZ, x1: h.maxX, z1: h.minZ, nx: 1, nz: 0, u0: -h.maxZ, u1: -h.minZ },
+    { x0: h.minX, z0: h.minZ, x1: h.minX, z1: h.maxZ, nx: -1, nz: 0, u0: h.minZ, u1: h.maxZ },
+  ];
+}
+
+/** A doorway header: both sides papered like the walls they join, and its underside. */
+function addHeader(papers: Record<Paper, Builder>, grid: Grid, light: LightField, h: Header): void {
+  const sides = headerSides(h);
+  let underside: Builder | null = null;
+  for (const q of sides) {
+    const b = papers[faceStyle(grid, q).paper];
+    addWall(b, grid, light, q, [h.y0, (h.y0 + h.y1) / 2, h.y1]);
+    underside ??= b;
+  }
+  const b = underside!;
+  const l = (lightAt(grid, light, (h.minX + h.maxX) / 2, (h.minZ + h.maxZ) / 2) * wallHeightShade(h.y0)) * 0.8;
+  const f = b.vert(h.minX, h.y0, h.minZ, 0, -1, 0, h.minX, h.minZ, l);
+  b.vert(h.maxX, h.y0, h.minZ, 0, -1, 0, h.maxX, h.minZ, l);
+  b.vert(h.minX, h.y0, h.maxZ, 0, -1, 0, h.minX, h.maxZ, l);
+  b.vert(h.maxX, h.y0, h.maxZ, 0, -1, 0, h.maxX, h.maxZ, l);
+  // Columns run +x, rows +z: unflipped would face down (x̂ × ẑ = −ŷ) — which is what we want.
+  b.grid(f, 2, 2);
 }
 
 /** A thin strip standing proud of the wall between heights y0 and y1: front, top and bottom faces. */
@@ -368,6 +402,7 @@ export function buildChunk(grid: Grid, cx: number, cy: number, mats: WorldMateri
     addWall(papers[style.paper], grid, light, q);
     if (style.rail) addStrip(rails, grid, light, q, RAIL_Y0, RAIL_Y1, RAIL_D);
   }
+  for (const h of doorHeaders(grid, cx, cy, CHUNK_CELLS)) addHeader(papers, grid, light, h);
 
   // Floor and ceiling share one vertex grid: sample light and contact shadow once per point.
   const samples = new Map<number, [number, number]>();

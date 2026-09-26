@@ -55,3 +55,15 @@ export function maybeEcho(
   const bz = Math.cos(yaw + spread);
   return { delaySec: rng.range(0.3, 0.5), x: pos.x + bx * dist, z: pos.z + bz * dist };
 }
+
+/** How wet a footstep sounds (0..1): the carpet is always damp ("old moist carpet"). */
+const WET_CARPET = 0.35;
+/** Unpowered zones: "ankle-deep fluid" soaks the carpet. */
+const WET_DARK = 0.65;
+/** Stepping in one of the damp patches: a splash. */
+const WET_PUDDLE = 1;
+
+export function footWetness(inPuddle: boolean, inDark: boolean): number {
+  if (inPuddle) return WET_PUDDLE;
+  return inDark ? WET_DARK : WET_CARPET;
+}

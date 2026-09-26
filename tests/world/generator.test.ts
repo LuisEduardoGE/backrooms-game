@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_GEN, generateLevel } from '../../src/world/generator';
-import { Cell, DIR_STEP, getCell, isDark } from '../../src/world/grid';
+import { DEFAULT_GEN, generateLevel, segmentWalls } from '../../src/world/generator';
+import { createRng } from '../../src/core/rng';
+import { Cell, createGrid, DIR_STEP, getCell, isDark, setCell } from '../../src/world/grid';
 import { bfsDistances } from '../../src/world/pathing';
 import { hasFullFace } from '../../src/world/solids';
 
@@ -211,5 +212,46 @@ describe('halls (zones)', () => {
       // Merges happened (so the check above really compared cells from different rooms).
       expect(merged).toBeGreaterThan(10);
     }
+  });
+});
+
+describe('segmented walls', () => {
+  /** Two 24×6 rooms (ids 0 and 1) stacked, sharing a 24-cell wall on row 7. */
+  function twoRooms() {
+    const g = createGrid(26, 15);
+    for (let y = 1; y <= 13; y++) {
+      for (let x = 1; x <= 24; x++) {
+        if (y === 7) continue;
+        setCell(g, x, y, Cell.Floor);
+        g.room[y * 26 + x] = y < 7 ? 0 : 1;
+      }
+    }
+    return g;
+  }
+
+  it('breaks a long wall between rooms into segments ("randomly segmented rooms")', () => {
+    const g = twoRooms();
+    segmentWalls(g, createRng(3), { ...DEFAULT_GEN, segmentChance: 1 });
+    const open = Array.from({ length: 24 }, (_, i) => getCell(g, i + 1, 7) === Cell.Floor);
+    // Several openings, each 1–2 cells, none at the wall's ends, never two touching.
+    const runs: number[] = [];
+    let len = 0;
+    for (const o of [...open, false]) {
+      if (o) len++;
+      else if (len) {
+        runs.push(len);
+        len = 0;
+      }
+    }
+    expect(runs.length).toBeGreaterThanOrEqual(2);
+    for (const r of runs) expect(r).toBeLessThanOrEqual(2);
+    expect(open[0]).toBe(false);
+    expect(open[23]).toBe(false);
+  });
+
+  it('leaves walls whole when segmenting is off', () => {
+    const g = twoRooms();
+    segmentWalls(g, createRng(3), { ...DEFAULT_GEN, segmentChance: 0 });
+    for (let x = 1; x <= 24; x++) expect(getCell(g, x, 7)).toBe(Cell.Wall);
   });
 });
