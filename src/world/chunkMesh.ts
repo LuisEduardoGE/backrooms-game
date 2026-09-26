@@ -407,7 +407,8 @@ export function buildChunk(grid: Grid, cx: number, cy: number, mats: WorldMateri
     outlets(outletSpots(quads), grid, light, mats.outlet),
     ...dressing(grid, cx, cy, light, mats, quads),
   ];
-  const casters = new Set<THREE.Material>([mats.wall, mats.wallDots, mats.wallStained, mats.rail, mats.outlet, mats.vent, mats.looseTile]);
+  // Only big shapes cast: rails, outlets and vents sit flat on the wall and would only add shadow-map work.
+  const casters = new Set<THREE.Material>([mats.wall, mats.wallDots, mats.wallStained, mats.looseTile]);
   const noShadow = new Set<THREE.Material>([mats.ceiling, mats.tbar, mats.void, mats.stain, mats.troffer]);
   for (const m of meshes) {
     if (!m) continue;
@@ -441,5 +442,7 @@ export function disposeChunk(group: THREE.Group): void {
   for (const child of group.children) {
     if (child instanceof THREE.InstancedMesh) child.dispose();
     else if (child instanceof THREE.Mesh) child.geometry.dispose();
+    // Nested furniture: instanced over shared model geometry, so only the instance buffers go.
+    else if (child instanceof THREE.Group) for (const m of child.children) if (m instanceof THREE.InstancedMesh) m.dispose();
   }
 }

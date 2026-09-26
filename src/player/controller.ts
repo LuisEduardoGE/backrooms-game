@@ -1,5 +1,5 @@
 import type { Grid } from '../world/grid';
-import { moveWithCollision, type Vec2 } from './collision';
+import { type ExtraSolids, moveWithCollision, PLAYER_RADIUS, type Vec2 } from './collision';
 
 export type Gait = 'walk' | 'sprint' | 'crouch';
 
@@ -79,7 +79,7 @@ export function applyLook(p: PlayerState, lookDX: number, lookDY: number): void 
   p.pitch = clamp(p.pitch - lookDY, -MAX_PITCH, MAX_PITCH);
 }
 
-export function updatePlayer(p: PlayerState, input: MoveInput, dt: number, grid: Grid): PlayerState {
+export function updatePlayer(p: PlayerState, input: MoveInput, dt: number, grid: Grid, extra?: ExtraSolids): PlayerState {
   applyLook(p, input.lookDX, input.lookDY);
   p.prevPos = { ...p.pos };
   p.prevEyeHeight = p.eyeHeight;
@@ -114,7 +114,7 @@ export function updatePlayer(p: PlayerState, input: MoveInput, dt: number, grid:
   if (!wantsToMove && !p.moving) p.vel = { x: 0, z: 0 };
   if (p.moving) {
     const want = { x: p.vel.x * dt, z: p.vel.z * dt };
-    const next = moveWithCollision(grid, p.pos, want.x, want.z);
+    const next = moveWithCollision(grid, p.pos, want.x, want.z, PLAYER_RADIUS, extra);
     // Blocked on an axis → that part of the momentum is spent on the wall, not stored.
     if (Math.abs(next.x - p.pos.x) < Math.abs(want.x) - 1e-6) p.vel = { x: 0, z: p.vel.z };
     if (Math.abs(next.z - p.pos.z) < Math.abs(want.z) - 1e-6) p.vel = { x: p.vel.x, z: 0 };

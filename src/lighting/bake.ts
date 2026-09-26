@@ -10,7 +10,7 @@ const REACH = 3.5;
  * Summed panel weight that counts as full light: reached under a well-lit cluster (~75 % of cells
  * with panels), so the gaps between clusters stay noticeably dimmer.
  */
-const FULL = 3.4;
+const FULL = 2.4;
 /**
  * Baked fluorescent light at a cell, 0..1: bright in pools under clusters of powered panels, dim in
  * the gaps between them, fading toward dark zones and never passing through walls.

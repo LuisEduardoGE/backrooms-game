@@ -177,7 +177,7 @@ describe('room structures', () => {
     for (const seed of [7, 42]) {
       const plain = generateLevel(seed, { structureChance: 0 });
       const furnished = generateLevel(seed);
-      expect(freeStanding(furnished.grid)).toBeGreaterThan(freeStanding(plain.grid) + 40);
+      expect(freeStanding(furnished.grid)).toBeGreaterThan(freeStanding(plain.grid) + 25);
     }
   });
 

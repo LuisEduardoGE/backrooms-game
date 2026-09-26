@@ -24,7 +24,7 @@ function smoothNoise(x: number, y: number, scale: number): number {
 
 /** Panel density from gloomy stretches to well-lit clusters. */
 const DENSITY_MIN = 0.05;
-const DENSITY_MAX = 0.75;
+const DENSITY_MAX = 0.58;
 
 /**
  * Level 0's "inconsistently-placed fluorescent lighting": a square 2×2 ft panel over some floor
@@ -45,7 +45,7 @@ export function isLightCell(grid: Grid, x: number, y: number): boolean {
 export function roomLightFactor(room: number): number {
   if (room < 0) return 1;
   const r = cellHash(room, 0, 29);
-  return r < 0.2 ? 0.35 : r > 0.8 ? 1.5 : 1;
+  return r < 0.2 ? 0.5 : r > 0.8 ? 1.3 : 1;
 }
 
 /** Lit ceiling lights nearest to a cell centre (ties by y then x). */

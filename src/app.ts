@@ -42,8 +42,12 @@ import { ITEM_COUNTS, type Item, placeItems } from './world/items';
 import { createProps } from './world/props';
 import type { ChunkPanels } from './world/chunkMesh';
 import { CHUNK_CELLS } from './world/chunks';
-import { ceilingDressing } from './world/dressing';
+import { ceilingDressing, wallFixtures } from './world/dressing';
 import { createChunkStreamer } from './world/streamer';
+import { furnishRooms, type PropPlacement } from './world/furnishing';
+import { buildPropMeshes, loadPropModels, placementMatrix, type PropInstance } from './world/propModels';
+import { wallQuads } from './world/wallFaces';
+import type { Rect } from './world/solids';
 import { loadWorldMaterials } from './world/textures';
 
 /** Distance falls off into dim olive, as in the references — never a pale white haze. */
@@ -72,6 +76,9 @@ renderer.toneMapping = THREE.AgXToneMapping;
 // Soft shadow maps for the few real panel lights near the player.
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+// Shadow maps are redrawn every other frame (see the loop): lights barely move frame to frame.
+renderer.shadowMap.autoUpdate = false;
+let shadowFrame = 0;
 /** Exposed for the walls (the photo's brightest surfaces), as an auto-exposing camcorder would. */
 const EXPOSURE = 1.75;
 renderer.toneMappingExposure = EXPOSURE;
@@ -96,14 +103,54 @@ const materials = await loadWorldMaterials(createRng(deriveSeed(seed, 'textures'
 const lightField = createLightField(level.grid);
 /** Baked light at a world point — props, the Howler and the IR light are matched to it. */
 const shade = (x: number, z: number) => lightAt(level.grid, lightField, x, z);
-const streamer = createChunkStreamer(scene, level.grid, materials, lightField);
-// Build the whole starting area up front, behind the title screen, so there's no pop-in at the start.
-streamer.update(level.start.x, level.start.y);
-streamer.flush();
 const lightSeed = deriveSeed(seed, 'lights');
 const truePath = shortestPath(level.grid, level.start, level.exit);
 const arrows = placeArrows(level.grid, truePath, createRng(deriveSeed(seed, 'clues')));
 const items = placeItems(level, truePath, createRng(deriveSeed(seed, 'items')));
+// Furniture keeps off the start, the exit, every item and the whole clue path.
+const cellIndex = (p: { x: number; y: number }) => p.y * level.grid.width + p.x;
+const furniture = furnishRooms(level, new Set([level.start, level.exit, ...truePath, ...items.map((i) => i.cell)].map(cellIndex)));
+const propTemplates = await loadPropModels();
+/** Furniture by chunk (of its anchor cell), and its colliders by every cell they overlap. */
+const furnitureByChunk = new Map<string, PropPlacement[]>();
+const furnitureSolids = new Map<number, Rect[]>();
+for (const p of furniture) {
+  const key = `${Math.floor(p.cell.x / CHUNK_CELLS)},${Math.floor(p.cell.y / CHUNK_CELLS)}`;
+  const list = furnitureByChunk.get(key);
+  if (list) list.push(p);
+  else furnitureByChunk.set(key, [p]);
+  if (!p.collide) continue;
+  for (let y = worldToCell(p.collide.minZ); y <= worldToCell(p.collide.maxZ); y++) {
+    for (let x = worldToCell(p.collide.minX); x <= worldToCell(p.collide.maxX); x++) {
+      const rects = furnitureSolids.get(y * level.grid.width + x);
+      if (rects) rects.push(p.collide);
+      else furnitureSolids.set(y * level.grid.width + x, [p.collide]);
+    }
+  }
+}
+const furnitureAt = (cx: number, cy: number): readonly Rect[] => furnitureSolids.get(cy * level.grid.width + cx) ?? [];
+/** Furniture and wall fixtures for one chunk, in the chunk's baked light. */
+function chunkFurniture(cx: number, cy: number): THREE.Object3D[] {
+  const instances: PropInstance[] = (furnitureByChunk.get(`${cx},${cy}`) ?? []).map((p) => ({
+    kind: p.kind,
+    matrix: placementMatrix(p),
+    light: shade(p.x, p.z),
+  }));
+  for (const f of wallFixtures(wallQuads(level.grid, cx, cy, CHUNK_CELLS))) {
+    const { spot } = f;
+    const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.atan2(spot.nx, spot.nz));
+    instances.push({
+      kind: f.kind,
+      matrix: new THREE.Matrix4().compose(new THREE.Vector3(spot.x + spot.nx * 0.005, f.y, spot.z + spot.nz * 0.005), q, new THREE.Vector3(1, 1, 1)),
+      light: shade(spot.x + spot.nx * 0.06, spot.z + spot.nz * 0.06),
+    });
+  }
+  return buildPropMeshes(propTemplates, instances);
+}
+const streamer = createChunkStreamer(scene, level.grid, materials, lightField, chunkFurniture);
+// Build the whole starting area up front, behind the title screen, so there's no pop-in at the start.
+streamer.update(level.start.x, level.start.y);
+streamer.flush();
 const props = createProps(scene, level, arrows, items, { chevron: materials.wall, dots: materials.wallDots, stained: materials.wallStained }, shade);
 const taken = new Set<number>();
 let notesFound = 0;
@@ -139,7 +186,7 @@ let endRevealed = false;
 const player = createPlayer({ x: cellToWorld(level.start.x), z: cellToWorld(level.start.y) }, level.startYaw);
 const debugHud = params.debug ? createDebugHud(level) : null;
 // ?debug only: a console handle for inspecting a scene (e.g. teleport: __backrooms.player.pos.x = …).
-if (params.debug) Object.assign(window, { __backrooms: { player, level, camera, materials, scene } });
+if (params.debug) Object.assign(window, { __backrooms: { player, level, camera, materials, scene, furniture, renderer } });
 if (params.debug) console.info(`[backrooms] seed ${seed} — reload with ?debug&seed=${seed} to replay`);
 
 const camcorder = createCamcorder();
@@ -426,7 +473,7 @@ renderer.setAnimationLoop((now: number) => {
   const steps = stepper.advance(frameDt);
   for (let i = 0; i < steps; i++) {
     // Steps keep running when not playing (with no input) so interpolation settles instead of drifting.
-    updatePlayer(player, stepInput, FIXED_DT, level.grid);
+    updatePlayer(player, stepInput, FIXED_DT, level.grid, furnitureAt);
     if (playing && reachedExit(level.exit, level.exitSide, player.pos)) {
       endTape('escape', now);
       break;
@@ -492,6 +539,7 @@ renderer.setAnimationLoop((now: number) => {
   const gameMs = recordedSec * 1000;
   const activeBlackout = blackout && gameMs < blackout.until ? { x: blackout.x, z: blackout.z, radius: BLACKOUT_RADIUS } : null;
   const exposure = updatePanels(now / 1000, activeBlackout, gameMs < dimUntil, frameDt);
+  renderer.shadowMap.needsUpdate = shadowFrame++ % 2 === 0;
   // Night vision has its own gain: a blackout or dim doesn't blind the IR picture.
   renderer.toneMappingExposure = EXPOSURE * (exposure + (1 - exposure) * camcorder.nvBlend);
   props.update(now / 1000);

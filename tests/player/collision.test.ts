@@ -49,4 +49,14 @@ describe('moveWithCollision', () => {
     const beside = moveWithCollision(g, { x: 5, z: 7 - PILLAR_SIZE / 2 - PLAYER_RADIUS - 0.05 }, 1.5, 0);
     expect(beside.x).toBeCloseTo(6.5, 5);
   });
+
+  it('also stops at extra solids such as furniture', () => {
+    const g = room(7);
+    const desk = { minX: 7, maxX: 8, minZ: 6, maxZ: 8 };
+    const extra = (cx: number, cy: number) => (cx === 3 && cy === 3 ? [desk] : []);
+    const stopped = moveWithCollision(g, { x: 5, z: 7 }, 2.5, 0, PLAYER_RADIUS, extra);
+    expect(stopped.x).toBeCloseTo(7 - PLAYER_RADIUS, 3);
+    // Without the desk the same move goes straight through.
+    expect(moveWithCollision(g, { x: 5, z: 7 }, 2.5, 0).x).toBeCloseTo(7.5, 5);
+  });
 });
