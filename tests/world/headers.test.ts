@@ -5,7 +5,14 @@ import { Cell, createGrid, setCell, WALL_HEIGHT } from '../../src/world/grid';
 /** Two rooms (above/below) split by a wall on row 5, with openings cut into it. */
 function wallWithOpenings(gaps: number[]) {
   const g = createGrid(20, 11);
-  for (let y = 1; y <= 9; y++) for (let x = 1; x <= 18; x++) if (y !== 5) setCell(g, x, y, Cell.Floor);
+  for (let y = 1; y <= 9; y++) {
+    for (let x = 1; x <= 18; x++) {
+      if (y === 5) continue;
+      setCell(g, x, y, Cell.Floor);
+      g.room[y * 20 + x] = y < 5 ? 0 : 1;
+    }
+  }
+  // Doorways are carved out of the wall: floor with no room id.
   for (const x of gaps) setCell(g, x, 5, Cell.Floor);
   return g;
 }
@@ -33,5 +40,24 @@ describe('doorHeaders', () => {
     const g = wallWithOpenings([12]);
     expect(doorHeaders(g, 0, 0, 10)).toHaveLength(0);
     expect(doorHeaders(g, 1, 0, 10)).toHaveLength(1);
+  });
+
+  it('never hangs a header across a narrow room or corridor (only over openings carved in a wall)', () => {
+    // A 3-wide corridor room running north–south between two walls: every row has wall–floor×3–wall.
+    const g = createGrid(9, 12);
+    for (let y = 1; y <= 10; y++) {
+      for (let x = 3; x <= 5; x++) {
+        setCell(g, x, y, Cell.Floor);
+        g.room[y * 9 + x] = 0;
+      }
+    }
+    expect(doorHeaders(g, 0, 0, 12)).toHaveLength(0);
+  });
+
+  it('leaves gaps between the stubs of a merged hall open (no beam across the hall)', () => {
+    const g = wallWithOpenings([4, 9, 14]);
+    // The two rooms were merged into one hall: every floor cell, including the carved gaps, shares a zone.
+    for (let i = 0; i < g.cells.length; i++) if (g.cells[i] === Cell.Floor) g.zone[i] = 0;
+    expect(doorHeaders(g, 0, 0, 20)).toHaveLength(0);
   });
 });

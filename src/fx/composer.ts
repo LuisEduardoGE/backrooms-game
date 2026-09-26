@@ -63,6 +63,8 @@ export function createVhsComposer(
   setSize(width, height);
 
   return {
+    /** The passes, for ?debug inspection. */
+    passes: { gtao, bloom },
     setSize,
     render(p: VhsParams): void {
       vhs.uniforms.uTime.value = p.time;

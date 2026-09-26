@@ -1,4 +1,4 @@
-import { Cell, type Grid, getCell } from './grid';
+import { Cell, CELL_SIZE, type Grid, getCell } from './grid';
 import { type Rect, solidRects } from './solids';
 
 /**
@@ -19,17 +19,6 @@ export interface WallQuad {
 }
 
 const EPS = 1e-6;
-
-/** Faces of wall cells enclosed on all four sides can never be seen. */
-function hidden(grid: Grid, x: number, y: number): boolean {
-  return (
-    getCell(grid, x, y) === Cell.Wall &&
-    getCell(grid, x + 1, y) === Cell.Wall &&
-    getCell(grid, x - 1, y) === Cell.Wall &&
-    getCell(grid, x, y + 1) === Cell.Wall &&
-    getCell(grid, x, y - 1) === Cell.Wall
-  );
-}
 
 /** Removes [a, b) from each interval. */
 function subtract(spans: [number, number][], a: number, b: number): [number, number][] {
@@ -72,7 +61,6 @@ export function wallQuads(grid: Grid, cx: number, cy: number, size: number): Wal
   const faces: Face[] = [];
   for (let y = y0; y < y1; y++) {
     for (let x = x0; x < x1; x++) {
-      if (hidden(grid, x, y)) continue;
       for (const r of solidRects(grid, x, y)) {
         const candidates: Face[] = [
           { axis: 'x', c: r.maxX, sign: 1, lo: r.minZ, hi: r.maxZ },
@@ -82,6 +70,9 @@ export function wallQuads(grid: Grid, cx: number, cy: number, size: number): Wal
         ];
         for (const f of candidates) {
           const probe = f.c + f.sign * EPS * 10; // just in front of the face
+          // Faces looking out of the map can never be seen.
+          const out = f.axis === 'x' ? probe < 0 || probe > grid.width * CELL_SIZE : probe < 0 || probe > grid.height * CELL_SIZE;
+          if (out) continue;
           let spans: [number, number][] = [[f.lo, f.hi]];
           for (const o of near) {
             if (o === r) continue;
