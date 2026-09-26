@@ -43,6 +43,9 @@ import { createProps } from './world/props';
 import type { ChunkPanels } from './world/chunkMesh';
 import { CHUNK_CELLS } from './world/chunks';
 import { ceilingDressing, type Puddle, puddles, wallFixtures } from './world/dressing';
+import { headroomAt } from './world/headers';
+/** How far ahead (m) the Howler notices a doorway header, so it is already stooped as its head reaches it at a sprint. */
+const HOWLER_LOOKAHEAD = 1.4;
 import { createChunkStreamer } from './world/streamer';
 import { furnishRooms, type PropPlacement } from './world/furnishing';
 import { buildPropMeshes, loadPropModels, placementMatrix, type PropInstance } from './world/propModels';
@@ -557,7 +560,7 @@ renderer.setAnimationLoop((now: number) => {
   // Night vision has its own gain: a blackout or dim doesn't blind the IR picture.
   renderer.toneMappingExposure = EXPOSURE * (exposure + (1 - exposure) * camcorder.nvBlend);
   props.update(now / 1000);
-  entityViews.sync(entities, a, frameDt, phase === 'playing', shade);
+  entityViews.sync(entities, a, frameDt, phase === 'playing', shade, (x, z) => headroomAt(level.grid, x, z, HOWLER_LOOKAHEAD));
   irLight.position.copy(camera.position);
   // Baked light multiplies every surface's albedo, the IR included; divide it back out so the
   // camcorder sees as far into a dark zone as it always did.

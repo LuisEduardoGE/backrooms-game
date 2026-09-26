@@ -58,9 +58,9 @@ export const DEFAULT_GEN: GenOptions = {
   darkFraction: 0.15,
   exitDistanceRatio: 0.7,
   mergeChance: 0.25,
-  widenChance: 0.6,
+  widenChance: 0.3,
   structureChance: 0.8,
-  segmentChance: 0.8,
+  segmentChance: 0.4,
 };
 
 interface Rect {
