@@ -47,17 +47,17 @@ const PILLAR_SPACING = 4;
 export const DEFAULT_GEN: GenOptions = {
   width: 200,
   height: 200,
-  minLeaf: 6,
-  maxLeaf: 22,
+  minLeaf: 5,
+  maxLeaf: 14,
   corridorChance: 0.12,
-  keepBigLeafChance: 0.3,
+  keepBigLeafChance: 0.15,
   extraConnectionRatio: 0.2,
   pillarHallChance: 0.6,
   darkFraction: 0.15,
   exitDistanceRatio: 0.7,
-  mergeChance: 0.4,
+  mergeChance: 0.25,
   widenChance: 0.6,
-  structureChance: 0.65,
+  structureChance: 0.8,
 };
 
 interface Rect {
@@ -497,7 +497,7 @@ type Structure = 'partitions' | 'blocks' | 'colonnade';
 function furnish(grid: Grid, rooms: Room[], rng: Rng, o: GenOptions): void {
   const kinds: Structure[] = ['partitions', 'partitions', 'blocks', 'colonnade'];
   for (const room of rooms) {
-    if (room.pillared || room.w < 7 || room.h < 7 || !rng.chance(o.structureChance)) continue;
+    if (room.pillared || room.w < 6 || room.h < 6 || !rng.chance(o.structureChance)) continue;
     const kind = rng.pick(kinds);
     const inRoom = (x: number, y: number) => getCell(grid, x, y) === Cell.Floor && grid.room[y * grid.width + x] === room.id;
     /** Places `cells` as `as` if each has a clear ring of this room's floor; returns success. */

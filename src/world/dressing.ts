@@ -95,3 +95,18 @@ export function puddles(grid: Grid, cx: number, cy: number, size: number): Puddl
 export function wallVents(quads: readonly WallQuad[]): OutletSpot[] {
   return spotsAlong(quads, 18, 41);
 }
+
+/** A clock or fire-alarm pull station on a wall: where, and how high its centre hangs. */
+export interface WallFixture {
+  kind: 'clock' | 'fireAlarm';
+  spot: OutletSpot;
+  y: number;
+}
+
+/** Office wall fixtures: a clock about every 30 m of wall, a fire alarm about every 40 m. */
+export function wallFixtures(quads: readonly WallQuad[]): WallFixture[] {
+  return [
+    ...spotsAlong(quads, 30, 71).map((spot) => ({ kind: 'clock' as const, spot, y: 2.0 })),
+    ...spotsAlong(quads, 40, 83).map((spot) => ({ kind: 'fireAlarm' as const, spot, y: 1.4 })),
+  ];
+}
