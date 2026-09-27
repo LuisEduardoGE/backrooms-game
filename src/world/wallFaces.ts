@@ -154,7 +154,17 @@ function hash01(a: number, b: number): number {
  * 1.2 m get nothing. Deterministic from the faces' positions; `salt` keeps different fixtures
  * from landing on the same spots.
  */
-export function spotsAlong(quads: readonly WallQuad[], every: number, salt = 0): OutletSpot[] {
+export interface SpotRules {
+  /** Closest two spots on one face may be (metres). */
+  minGap: number;
+  /** Keep this far (metres) from each end of a face (so neighbouring faces can't crowd a seam). */
+  endMargin: number;
+  /** Allow an occasional close pair. */
+  pairs: boolean;
+}
+const LOOSE: SpotRules = { minGap: 0.25, endMargin: 0, pairs: true };
+
+export function spotsAlong(quads: readonly WallQuad[], every: number, salt = 0, rules: SpotRules = LOOSE): OutletSpot[] {
   const spots: OutletSpot[] = [];
   for (const q of quads) {
     const len = Math.hypot(q.x1 - q.x0, q.z1 - q.z0);
@@ -171,16 +181,20 @@ export function spotsAlong(quads: readonly WallQuad[], every: number, salt = 0):
       p *= mean / count;
       cum += p;
     }
+    // Allowed stretch of the face, in t (0..1).
+    const lo = Math.max(0.1, rules.endMargin / len);
+    const hi = Math.min(0.9, 1 - rules.endMargin / len);
+    if (hi <= lo) continue;
     const ts: number[] = [];
     for (let k = 0; k < count; k++) {
-      const t = 0.1 + next() * 0.8;
+      const t = lo + next() * (hi - lo);
       ts.push(t);
-      if (next() < 0.25) ts.push(Math.min(0.9, t + 0.3 / len)); // a close pair (double outlet)
+      if (rules.pairs && next() < 0.25) ts.push(Math.min(hi, t + 0.3 / len)); // a close pair
     }
     ts.sort((a, b) => a - b);
     let last = -Infinity;
     for (const t of ts) {
-      if ((t - last) * len < 0.25) continue;
+      if ((t - last) * len < rules.minGap) continue;
       last = t;
       spots.push({ quad: q, x: q.x0 + (q.x1 - q.x0) * t, z: q.z0 + (q.z1 - q.z0) * t, nx: q.nx, nz: q.nz });
     }
@@ -190,12 +204,16 @@ export function spotsAlong(quads: readonly WallQuad[], every: number, salt = 0):
 
 /** Socket height (metres, plate centre): one height throughout, clear above the bumper rail. */
 export const SOCKET_Y = 0.34;
+/** Closest two sockets on one wall may be (metres). */
+export const MIN_SOCKET_GAP = 1.5;
 /** Light-switch height (plate centre). */
 export const SWITCH_Y = 1.15;
 
 /** Where electrical sockets sit ("scattered electrical outlets", as in the original photo). */
 export function outletSpots(quads: readonly WallQuad[]): OutletSpot[] {
-  return spotsAlong(quads, OUTLET_EVERY).map((s) => ({ ...s, y: SOCKET_Y }));
+  // Spread out as in a real building: never two within MIN_SOCKET_GAP on one wall, and kept half
+  // that from each face end so faces meeting at a seam can't put two side by side either.
+  return spotsAlong(quads, OUTLET_EVERY, 0, { minGap: MIN_SOCKET_GAP, endMargin: MIN_SOCKET_GAP / 2, pairs: false }).map((s) => ({ ...s, y: SOCKET_Y }));
 }
 
 /**

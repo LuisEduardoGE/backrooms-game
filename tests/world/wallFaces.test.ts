@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { Cell, createGrid, type Grid, PILLAR_SIZE, setCell } from '../../src/world/grid';
 import { generateLevel } from '../../src/world/generator';
 import { solidRects, WALL_THICKNESS } from '../../src/world/solids';
-import { faceStyle, outletSpots, SOCKET_Y, SWITCH_Y, switchSpots, type WallQuad, wallQuads } from '../../src/world/wallFaces';
+import { faceStyle, MIN_SOCKET_GAP, outletSpots, SOCKET_Y, SWITCH_Y, switchSpots, type WallQuad, wallQuads } from '../../src/world/wallFaces';
 
 /** 12×12 floor with no border, so only hand-placed solids exist. */
 function open(): Grid {
@@ -220,6 +220,22 @@ describe('wall items are scattered, not patterned', () => {
     expect(bare).toBeGreaterThan(0.3);
     expect(bare).toBeLessThan(0.8);
     expect(Math.max(...counts)).toBeGreaterThanOrEqual(3);
+  });
+
+  it('never puts two sockets close together on the same wall (across face and chunk seams too)', () => {
+    const all = [0, 1, 2, 3, 4, 5, 6, 7].flatMap((cx) => [0, 1, 2, 3, 4, 5, 6, 7].flatMap((cy) => outletSpots(wallQuads(level.grid, cx, cy, 16))));
+    const close: string[] = [];
+    for (let i = 0; i < all.length; i++) {
+      for (let j = i + 1; j < all.length; j++) {
+        const a = all[i];
+        const b = all[j];
+        if (a.nx !== b.nx || a.nz !== b.nz) continue;
+        const samePlane = a.nx !== 0 ? Math.abs(a.x - b.x) < 0.01 : Math.abs(a.z - b.z) < 0.01;
+        if (samePlane && Math.hypot(a.x - b.x, a.z - b.z) < MIN_SOCKET_GAP) close.push(`${a.x.toFixed(1)},${a.z.toFixed(1)}`);
+      }
+    }
+    expect(close).toEqual([]);
+    expect(MIN_SOCKET_GAP).toBeGreaterThanOrEqual(1.5);
   });
 
   it('puts every socket at one height, clear of the rail (a building has one socket height)', () => {
