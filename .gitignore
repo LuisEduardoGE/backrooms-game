@@ -7,3 +7,7 @@ dist/
 .vite/
 coverage/
 scripts/.frames/
+
+# ai-context memory system: track the Claude tooling, ignore local state
+.claude/.sync-nudged
+.claude/.uncommitted-nudged

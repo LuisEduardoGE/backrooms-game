@@ -1,5 +1,29 @@
 # Backrooms Game — CLAUDE.md
 
+<!-- ai-context:start -->
+## Project persistent context
+
+This project keeps its long-lived knowledge in **`docs/ai-context`** (plain Markdown;
+Obsidian-compatible). Ported from House Hunter's system.
+
+**At the start of every session:** a `SessionStart` hook prints live repo facts
+(`.claude/hooks/context_facts.py`) — they outrank any sha or count in a doc. Then read in full:
+`docs/ai-context/00-INDEX.md`, `01-PRODUCT.md`, `02-ARCHITECTURE.md`, `04-CURRENT-STATE.md`,
+`05-NEXT-STEPS.md`. **Grep, don't read end to end:** `03-DECISIONS.md` before changing behaviour
+in an area, `06-KNOWN-ISSUES.md` before debugging a module.
+
+**Before completing a session:** run **`/sync-context`**. Two `Stop` hooks back it up — one when
+source changed since `docs/ai-context` was last updated but the docs did not, one when the
+working tree is dirty — each firing once per distinct state.
+
+- `04-CURRENT-STATE.md` is a **snapshot**, never a changelog; history goes in `sessions/`.
+- `03-DECISIONS.md` is append-only — supersede, don't edit.
+- `06-KNOWN-ISSUES.md` needs evidence; delete entries once fixed.
+- Record only what was verified; say "unverified" for unchecked production state. No secrets.
+- **Code outranks all documentation.** When a doc contradicts the code, say so and fix the doc
+  in the same change. Session notes are history, not specifications.
+<!-- ai-context:end -->
+
 ## Vision
 
 A first-person found-footage horror game in the browser, set in **Level 0 of the Backrooms**:
