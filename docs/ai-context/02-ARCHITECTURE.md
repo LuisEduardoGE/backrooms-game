@@ -7,7 +7,7 @@ Last updated: 2026-11-23
 - **TypeScript 7** (`tsc --noEmit` as type-check) + **Vite 8** + **Three.js 0.186** (plain, no
   React). Only runtime dependency: `three`.
 - Post-processing from `three/addons` (`src/fx/composer.ts`): scene → GTAO (half-res) →
-  UnrealBloom → OutputPass (AgX) → custom VHS `ShaderPass` (`src/fx/vhsShader.ts`) → SMAA.
+  UnrealBloom → OutputPass (AgX) → SMAA → custom VHS `ShaderPass` (`src/fx/vhsShader.ts`).
 - **Web Audio API** — every sound is synthesized; no audio files (`src/audio/engine.ts:3`).
 - **Vitest 4** (`environment: node`, `tests/**/*.test.ts`, `vite.config.ts`).
 - `puppeteer-core` + ffmpeg for the trailer recorder (`scripts/record-trailer.mjs`).
@@ -50,6 +50,9 @@ npm test             # vitest run (pure logic)
 npm run build        # tsc --noEmit && vite build → dist/
 npm run trailer      # build + record public/trailer.gif (needs Chrome via CHROME_PATH or default path, and ffmpeg)
 ```
+
+`Makefile` wraps these (`make install|run|test|lint|build|preview|clean`); `.github/workflows/ci.yml`
+(push/PR to `main`) runs `make install`, `make lint`, `make test`, `make build` on Node 22.
 
 Deploy: `.github/workflows/pages.yml` — **manual only** (`workflow_dispatch`): npm ci → test →
 build → GitHub Pages. Pages on a private repo needs a paid plan; Vercel/Netlify with
